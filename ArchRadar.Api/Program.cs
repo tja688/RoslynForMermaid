@@ -26,6 +26,7 @@ builder.Services.AddSingleton(paths);
 builder.Services.AddSingleton<ProjectCatalogService>();
 builder.Services.AddSingleton<SnapshotService>();
 builder.Services.AddSingleton<ScanService>();
+builder.Services.AddSingleton<EditorLauncher>();
 
 var app = builder.Build();
 app.UseCors();
@@ -129,6 +130,23 @@ app.MapGet("/api/projects/{projectId}/snapshots/{snapshotId}/diagram", (string p
     return Results.Ok(new DiagramResponse(content));
 });
 
+app.MapGet("/api/projects/{projectId}/snapshots/{snapshotId}/audit", (string projectId, string snapshotId, SnapshotService snapshotService, ProjectCatalogService catalogService) =>
+{
+    var profile = catalogService.GetProfile(projectId);
+    if (profile == null)
+    {
+        return Results.NotFound();
+    }
+
+    var audit = snapshotService.ReadAudit(projectId, snapshotId);
+    if (audit == null)
+    {
+        return Results.NotFound();
+    }
+
+    return Results.Ok(audit);
+});
+
 app.MapPost("/api/projects/{projectId}/scan", async (string projectId, ScanRequest? request, ProjectCatalogService catalogService, ScanService scanService) =>
 {
     var profile = catalogService.GetProfile(projectId);
@@ -139,6 +157,12 @@ app.MapPost("/api/projects/{projectId}/scan", async (string projectId, ScanReque
 
     var result = await scanService.RunScanAsync(profile, request?.Notes);
     return Results.Ok(new SnapshotSummary(result.SnapshotId, result.Timestamp, result.Notes));
+});
+
+app.MapPost("/api/open", (OpenRequest request, EditorLauncher launcher) =>
+{
+    var result = launcher.OpenFile(request.File, request.Line, request.Col);
+    return Results.Ok(new OpenResponse(result.Ok, result.Message));
 });
 
 app.Run();

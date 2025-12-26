@@ -44,6 +44,13 @@ public sealed class SnapshotService
         return JsonFileStore.Read<SnapshotIndex>(_paths.SnapshotIndexPath(safeId, snapshotId));
     }
 
+    public ArchRadar.Core.Models.AuditSnapshot? ReadAudit(string projectId, string snapshotId)
+    {
+        var safeId = PathSanitizer.ToSafeId(projectId);
+        var path = _paths.SnapshotAuditPath(safeId, snapshotId);
+        return JsonFileStore.Read<ArchRadar.Core.Models.AuditSnapshot>(path);
+    }
+
     public string? ReadLayerDiagram(string projectId, string snapshotId, string layerId)
     {
         var index = GetSnapshotIndex(projectId, snapshotId);

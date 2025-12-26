@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import mermaid from 'mermaid';
 import type { MermaidRenderOptions, MermaidNodeEvent } from '../../domain/types';
+import { extractMermaidIds } from '../../domain/mermaidIds';
 import {
   getBackgroundById,
   getFontById,
@@ -17,6 +18,27 @@ interface MermaidPreviewProps {
   onError?: (message: string) => void;
   onNodeEvent?: (event: MermaidNodeEvent) => void;
 }
+
+const resolveMermaidTarget = (target: HTMLElement | null) => {
+  if (!target) return null;
+
+  let current: HTMLElement | null = target;
+  while (current) {
+    const dataId = current.getAttribute('data-id');
+    const id = current.getAttribute('id');
+    const ids = [...extractMermaidIds(dataId), ...extractMermaidIds(id)];
+    if (ids.length > 0) {
+      const unique = Array.from(new Set(ids));
+      return {
+        ids: unique,
+        label: current.textContent?.trim() || undefined,
+      };
+    }
+    current = current.parentElement;
+  }
+
+  return null;
+};
 
 const injectSvgStyles = (svg: string, themeCss?: string, fontFamily?: string) => {
   const fontCss = fontFamily
@@ -140,11 +162,52 @@ const MermaidPreview = ({
         style={actualBgStyle}
         ref={containerRef}
         onClick={(event) => {
+          if (!onNodeEvent || event.detail > 1) return;
+          const target = event.target as HTMLElement | null;
+          const resolved = resolveMermaidTarget(target);
+          if (!resolved) return;
+          if (resolved.ids.length >= 2) {
+            onNodeEvent({
+              kind: 'edge',
+              action: 'click',
+              fromMermaidId: resolved.ids[0],
+              toMermaidId: resolved.ids[1],
+              label: resolved.label,
+              rawEvent: event.nativeEvent,
+            });
+            return;
+          }
+          onNodeEvent({
+            kind: 'node',
+            action: 'click',
+            mermaidId: resolved.ids[0],
+            label: resolved.label,
+            rawEvent: event.nativeEvent,
+          });
+        }}
+        onDoubleClick={(event) => {
           if (!onNodeEvent) return;
           const target = event.target as HTMLElement | null;
-          const node = target?.closest('g[id]') ?? target?.closest('[id]');
-          const nodeId = node?.id || undefined;
-          onNodeEvent({ nodeId, rawEvent: event.nativeEvent });
+          const resolved = resolveMermaidTarget(target);
+          if (!resolved) return;
+          if (resolved.ids.length >= 2) {
+            onNodeEvent({
+              kind: 'edge',
+              action: 'doubleClick',
+              fromMermaidId: resolved.ids[0],
+              toMermaidId: resolved.ids[1],
+              label: resolved.label,
+              rawEvent: event.nativeEvent,
+            });
+            return;
+          }
+          onNodeEvent({
+            kind: 'node',
+            action: 'doubleClick',
+            mermaidId: resolved.ids[0],
+            label: resolved.label,
+            rawEvent: event.nativeEvent,
+          });
         }}
       >
         {isRendering && (

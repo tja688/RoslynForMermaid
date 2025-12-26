@@ -1,4 +1,5 @@
 import type {
+  AuditSnapshot,
   DiagramResponse,
   HealthResponse,
   LayerResponse,
@@ -149,4 +150,46 @@ export const getDiagram = async (
       `flowchart TB
   A[Layer Not Found] --> B[Select another layer]`,
   };
+};
+
+export const getAudit = async (
+  projectId: string,
+  snapshotId: string,
+): Promise<AuditSnapshot> => {
+  await delay(120);
+  return {
+    nodes: [
+      {
+        id: `${projectId}:${snapshotId}:Gateway`,
+        kind: 'System',
+        nameDisplay: 'GatewayController',
+        featureKey: 'Gateway',
+        source: { file: 'src/GatewayController.cs', startLine: 12, startCol: 5 },
+      },
+      {
+        id: `${projectId}:${snapshotId}:Auth`,
+        kind: 'System',
+        nameDisplay: 'AuthService',
+        featureKey: 'Gateway',
+        source: { file: 'src/AuthService.cs', startLine: 8, startCol: 5 },
+      },
+    ],
+    edges: [
+      {
+        fromId: `${projectId}:${snapshotId}:Gateway`,
+        toId: `${projectId}:${snapshotId}:Auth`,
+        edgeKind: 'Calls',
+        weight: 2,
+        confidence: 'Medium',
+        callSites: [
+          { file: 'src/GatewayController.cs', line: 42, col: 15, snippet: 'auth.Login()' },
+        ],
+      },
+    ],
+  };
+};
+
+export const openInEditor = async () => {
+  await delay(80);
+  return { ok: true };
 };

@@ -5,6 +5,8 @@ import SnapshotPanel from '../components/SnapshotPanel';
 import ThemePicker from '../components/ThemePicker';
 import type {
   DataSource,
+  AuditEdge,
+  AuditSnapshot,
   MermaidRenderOptions,
   ProjectSummary,
   SnapshotSummary,
@@ -14,6 +16,14 @@ import {
   getThemeConfig,
   type ThemeType,
 } from '../domain/themeCatalog';
+import {
+  buildFeatureIndex,
+  buildL2LayerMap,
+  buildNodeIndex,
+  collectNodeEdges,
+  findEdge,
+  getNodeById,
+} from '../domain/auditMapping';
 import * as api from '../services/api';
 import * as mockApi from '../services/mockApi';
 
@@ -48,6 +58,10 @@ const App = () => {
   const [apiMessage, setApiMessage] = useState('');
   const [apiAvailable, setApiAvailable] = useState(false);
   const [apiVersion, setApiVersion] = useState<string | undefined>(undefined);
+  const [audit, setAudit] = useState<AuditSnapshot | null>(null);
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [selectedFeatureKey, setSelectedFeatureKey] = useState<string | null>(null);
+  const [selectedEdge, setSelectedEdge] = useState<AuditEdge | null>(null);
 
   const renderOptions: MermaidRenderOptions = useMemo(
     () => ({
@@ -61,6 +75,15 @@ const App = () => {
   useEffect(() => {
     setRenderError('');
   }, [code]);
+
+  const nodeIndex = useMemo(() => buildNodeIndex(audit), [audit]);
+  const featureIndex = useMemo(() => buildFeatureIndex(audit), [audit]);
+  const l2LayerMap = useMemo(() => buildL2LayerMap(audit), [audit]);
+  const selectedNode = useMemo(() => getNodeById(audit, selectedNodeId), [audit, selectedNodeId]);
+  const selectedNodeEdges = useMemo(
+    () => collectNodeEdges(audit, selectedNodeId),
+    [audit, selectedNodeId],
+  );
 
   useEffect(() => {
     api
@@ -86,6 +109,10 @@ const App = () => {
       setSelectedProjectId('');
       setSelectedSnapshotId('');
       setSelectedLayer('');
+      setAudit(null);
+      setSelectedNodeId(null);
+      setSelectedFeatureKey(null);
+      setSelectedEdge(null);
       return;
     }
 
@@ -98,6 +125,10 @@ const App = () => {
       setSelectedProjectId('');
       setSelectedSnapshotId('');
       setSelectedLayer('');
+      setAudit(null);
+      setSelectedNodeId(null);
+      setSelectedFeatureKey(null);
+      setSelectedEdge(null);
       return;
     }
 
@@ -127,6 +158,7 @@ const App = () => {
     if (source === 'demo' || !selectedProjectId) {
       setSnapshots([]);
       setSelectedSnapshotId('');
+      setAudit(null);
       return;
     }
 
@@ -155,6 +187,7 @@ const App = () => {
     if (source === 'demo' || !selectedProjectId || !selectedSnapshotId) {
       setLayers([]);
       setSelectedLayer('');
+      setAudit(null);
       return;
     }
 
@@ -202,6 +235,33 @@ const App = () => {
       cancelled = true;
     };
   }, [source, selectedProjectId, selectedSnapshotId, selectedLayer]);
+
+  useEffect(() => {
+    if (source === 'demo') return;
+    if (!selectedProjectId || !selectedSnapshotId) return;
+
+    const client = source === 'mock' ? mockApi : api;
+    let cancelled = false;
+
+    client
+      .getAudit(selectedProjectId, selectedSnapshotId)
+      .then((data) => {
+        if (cancelled) return;
+        setAudit(data);
+        setSelectedNodeId(null);
+        setSelectedFeatureKey(null);
+        setSelectedEdge(null);
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        setApiMessage(error instanceof Error ? error.message : 'Failed to load audit.');
+        setAudit(null);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [source, selectedProjectId, selectedSnapshotId]);
 
   const handleExport = () => {
     const svg = document.querySelector('#mermaid-preview svg') as SVGSVGElement | null;
@@ -299,8 +359,50 @@ const App = () => {
               renderOptions={renderOptions}
               onError={setRenderError}
               onNodeEvent={(event) => {
-                if (event.nodeId) {
-                  console.info('Mermaid node event:', event.nodeId);
+                if (event.kind === 'node') {
+                  const mermaidId = event.mermaidId;
+                  if (!mermaidId) return;
+
+                  if (selectedLayer === 'L0') {
+                    const featureKey = featureIndex.mermaidIdToFeature.get(mermaidId) ?? null;
+                    setSelectedFeatureKey(featureKey);
+                    setSelectedNodeId(null);
+                    setSelectedEdge(null);
+                    if (event.action === 'doubleClick' && featureKey) {
+                      const nextLayer = `L1:${featureKey}`;
+                      if (layers.includes(nextLayer)) {
+                        setSelectedLayer(nextLayer);
+                      }
+                    }
+                    return;
+                  }
+
+                  const node = nodeIndex.mermaidIdToNode.get(mermaidId);
+                  if (!node) return;
+                  setSelectedNodeId(node.id);
+                  setSelectedFeatureKey(null);
+                  setSelectedEdge(null);
+
+                  if (event.action === 'doubleClick') {
+                    const targetLayer = l2LayerMap.get(node.id);
+                    if (targetLayer && layers.includes(targetLayer)) {
+                      setSelectedLayer(targetLayer);
+                    }
+                  }
+                }
+
+                if (event.kind === 'edge') {
+                  const fromMermaidId = event.fromMermaidId ?? null;
+                  const toMermaidId = event.toMermaidId ?? null;
+                  const fromNodeId =
+                    fromMermaidId ? nodeIndex.mermaidIdToNode.get(fromMermaidId)?.id ?? null : null;
+                  const toNodeId =
+                    toMermaidId ? nodeIndex.mermaidIdToNode.get(toMermaidId)?.id ?? null : null;
+                  const edge = findEdge(audit, fromNodeId, toNodeId, event.label);
+                  if (!edge) return;
+                  setSelectedEdge(edge);
+                  setSelectedNodeId(null);
+                  setSelectedFeatureKey(null);
                 }
               }}
             />
@@ -308,9 +410,102 @@ const App = () => {
 
           <aside className="rounded-2xl border border-slate-200 bg-white/80 p-4 shadow-sm">
             <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Error Panel
+              Inspector
             </h2>
-            <div className="mt-3 space-y-3 text-sm text-slate-700">
+            <div className="mt-3 space-y-3 text-xs text-slate-700">
+              {selectedFeatureKey && (
+                <div className="space-y-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                  <div className="text-xs font-semibold text-slate-900">Feature</div>
+                  <div className="text-sm font-semibold">{selectedFeatureKey}</div>
+                  <div className="flex justify-between text-[11px] text-slate-600">
+                    <span>Nodes</span>
+                    <span>{featureIndex.statsByFeature.get(selectedFeatureKey)?.nodeCount ?? 0}</span>
+                  </div>
+                  <div className="flex justify-between text-[11px] text-slate-600">
+                    <span>Edges</span>
+                    <span>{featureIndex.statsByFeature.get(selectedFeatureKey)?.edgeCount ?? 0}</span>
+                  </div>
+                </div>
+              )}
+
+              {selectedNode && (
+                <div className="space-y-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                  <div className="text-xs font-semibold text-slate-900">Node</div>
+                  <div className="text-sm font-semibold">{selectedNode.nameDisplay}</div>
+                  <div className="text-[11px] text-slate-600">Kind: {selectedNode.kind}</div>
+                  <div className="text-[11px] text-slate-600">Feature: {selectedNode.featureKey}</div>
+                  {selectedNode.source && (
+                    <div className="text-[11px] text-slate-600">
+                      {selectedNode.source.file}:{selectedNode.source.startLine}:{selectedNode.source.startCol}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {selectedEdge && (
+                <div className="space-y-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                  <div className="text-xs font-semibold text-slate-900">Edge</div>
+                  <div className="text-[11px] text-slate-600">Kind: {selectedEdge.edgeKind}</div>
+                  <div className="text-[11px] text-slate-600">
+                    From: {selectedEdge.fromId}
+                  </div>
+                  <div className="text-[11px] text-slate-600">
+                    To: {selectedEdge.toId}
+                  </div>
+                  <div className="text-[11px] text-slate-600">
+                    CallSites: {selectedEdge.callSites.length}
+                  </div>
+                  {selectedEdge.callSites.length > 0 && (
+                    <div className="space-y-2">
+                      {selectedEdge.callSites.map((site, index) => (
+                        <button
+                          key={`${site.file}-${site.line}-${site.col}-${index}`}
+                          className="w-full rounded-lg border border-amber-200 bg-amber-50 px-2 py-1 text-left text-[11px] text-amber-800 hover:bg-amber-100"
+                          onClick={() => {
+                            const client = source === 'mock' ? mockApi : api;
+                            client
+                              .openInEditor(site.file, site.line, site.col)
+                              .then((result) => {
+                                if (!result.ok) {
+                                  setApiMessage(result.message ?? 'Failed to open file.');
+                                }
+                              })
+                              .catch(() => setApiMessage('Failed to open file.'));
+                          }}
+                        >
+                          {site.file}:{site.line}:{site.col}
+                          {site.snippet ? ` — ${site.snippet}` : ''}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {selectedNodeEdges.length > 0 && !selectedEdge && (
+                <div className="space-y-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                  <div className="text-xs font-semibold text-slate-900">Related Edges</div>
+                  {selectedNodeEdges.map((edge, index) => (
+                    <button
+                      key={`${edge.fromId}-${edge.toId}-${edge.edgeKind}-${index}`}
+                      className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-left text-[11px] text-slate-700 hover:bg-slate-100"
+                      onClick={() => setSelectedEdge(edge)}
+                    >
+                      {edge.edgeKind}: {edge.fromId} → {edge.toId}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {!selectedFeatureKey && !selectedNode && !selectedEdge && (
+                <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] text-slate-500">
+                  Select a node or edge to inspect details.
+                </div>
+              )}
+
+              <h2 className="pt-4 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Status
+              </h2>
               {apiMessage ? (
                 <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
                   {apiMessage}
@@ -322,12 +517,12 @@ const App = () => {
               )}
 
               {renderError ? (
-                <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800">
+                <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
                   {renderError}
                 </div>
               ) : (
                 <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500">
-                  Mermaid render errors will show here.
+                  Mermaid errors will show here.
                 </div>
               )}
             </div>

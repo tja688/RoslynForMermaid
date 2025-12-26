@@ -1,4 +1,5 @@
 import type {
+  AuditSnapshot,
   DiagramResponse,
   HealthResponse,
   LayerResponse,
@@ -19,9 +20,10 @@ const resolveUrl = (path: string) => {
   return `${API_BASE}${path}`;
 };
 
-const fetchJson = async <T>(path: string): Promise<T> => {
+const fetchJson = async <T>(path: string, init?: RequestInit): Promise<T> => {
   const response = await fetch(resolveUrl(path), {
-    headers: { Accept: 'application/json' },
+    headers: { Accept: 'application/json', ...(init?.headers ?? {}) },
+    ...init,
   });
 
   if (!response.ok) {
@@ -51,3 +53,17 @@ export const getDiagram = (
   fetchJson<DiagramResponse>(
     `/api/projects/${projectId}/snapshots/${snapshotId}/diagram?layer=${encodeURIComponent(layer)}`,
   );
+
+export const getAudit = (projectId: string, snapshotId: string) =>
+  fetchJson<AuditSnapshot>(
+    `/api/projects/${projectId}/snapshots/${snapshotId}/audit`,
+  );
+
+export const openInEditor = (file: string, line?: number, col?: number) =>
+  fetchJson<{ ok: boolean; message?: string }>('/api/open', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ file, line, col }),
+  });
