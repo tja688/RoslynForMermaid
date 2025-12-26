@@ -1,0 +1,54 @@
+{
+  "notes": "ArchRadar 外置规则配置：此文件是唯一规则事实来源。",
+  "debugEnabled": true,
+  "scan": {
+    "notes": "mode 可选：DirectoryOnly / MsBuildSolution。MsBuildSolution 需要 solutionPath。",
+    "mode": "DirectoryOnly",
+    "solutionPath": "",
+    "excludeGlobs": [
+      "**/bin/**",
+      "**/obj/**",
+      "**/.git/**",
+      "**/Library/**",
+      "**/Temp/**"
+    ]
+  },
+  "featureRules": {
+    "notes": "Feature 归属规则，按顺序匹配，优先命名空间。",
+    "fallbackFeatureKey": "Unresolved",
+    "rules": [
+      {
+        "kind": "NamespacePattern",
+        "pattern": "ThatGameJam.Features.{feature}.",
+        "notes": "命名空间示例：ThatGameJam.Features.Inventory.Controllers"
+      },
+      {
+        "kind": "FolderPattern",
+        "pattern": "Assets/Scripts/Features/{feature}/",
+        "notes": "路径示例：Assets/Scripts/Features/Inventory/..."
+      }
+    ]
+  },
+  "externalFolding": {
+    "enabled": true,
+    "notes": "外部依赖折叠：命中前缀后聚合为 External::<name>。",
+    "defaultGroupName": "External",
+    "groups": [
+      {
+        "name": "Unity",
+        "prefixes": ["UnityEngine", "UnityEditor", "Unity"],
+        "notes": "Unity 内置命名空间"
+      },
+      {
+        "name": "DotNet",
+        "prefixes": ["System", "Microsoft"],
+        "notes": ".NET BCL"
+      },
+      {
+        "name": "ThirdParty",
+        "prefixes": ["Cysharp", "DG.Tweening", "Spine"],
+        "notes": "常见第三方库"
+      }
+    ]
+  }
+}

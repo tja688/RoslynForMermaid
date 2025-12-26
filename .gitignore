@@ -1,0 +1,29 @@
+# ======= C# / .NET 规则 =======
+[Bb]in/
+[Oo]bj/
+*.exe
+*.dll
+*.pdb
+*.user
+*.suo
+*.vspscc
+*.vssscc
+*.sln.docstates
+.vs/
+.vscode/
+
+# ======= Frontend (Node/Vite/React) 规则 =======
+node_modules/
+dist/
+dist-ssr/
+*.local
+.eslintcache
+.stylelintcache
+*.log
+
+# ======= 操作系统/编辑器规则 =======
+.DS_Store
+Thumbs.db
+Desktop.ini
+.idea/
+*.swp
