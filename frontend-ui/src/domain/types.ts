@@ -24,6 +24,68 @@ export interface DiagramResponse {
   mmd: string;
 }
 
+export interface ScanConfig {
+  notes?: string;
+  mode: string;
+  solutionPath?: string | null;
+  excludeGlobs: string[];
+}
+
+export interface FeatureRule {
+  kind: string;
+  pattern: string;
+  featureKey?: string | null;
+  notes?: string;
+}
+
+export interface FeatureRuleConfig {
+  notes?: string;
+  fallbackFeatureKey: string;
+  rules: FeatureRule[];
+}
+
+export interface ExternalGroup {
+  name: string;
+  prefixes: string[];
+  notes?: string;
+}
+
+export interface ExternalFoldingConfig {
+  notes?: string;
+  enabled: boolean;
+  defaultGroupName: string;
+  groups: ExternalGroup[];
+}
+
+export interface L2Config {
+  notes?: string;
+  enabled: boolean;
+  targets: string[];
+  stopKinds: string[];
+  maxDepth: number;
+  edgeKinds: string[];
+}
+
+export interface ArchRadarConfig {
+  notes?: string;
+  debugEnabled: boolean;
+  legacyL2Detected?: boolean;
+  scan: ScanConfig;
+  featureRules: FeatureRuleConfig;
+  externalFolding: ExternalFoldingConfig;
+  l2: L2Config;
+}
+
+export interface ProjectProfile {
+  projectId: string;
+  name: string;
+  projectRoot: string;
+  configPath?: string | null;
+  scanRoot?: string | null;
+  notes?: string | null;
+  updatedAt?: string | null;
+}
+
 export interface AuditSource {
   file: string;
   startLine: number;

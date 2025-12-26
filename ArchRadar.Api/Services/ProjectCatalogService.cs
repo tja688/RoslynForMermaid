@@ -28,6 +28,63 @@ public sealed class ProjectCatalogService
         return JsonFileStore.Read<ProjectProfile>(_paths.ProjectProfilePath(safeId));
     }
 
+    public ProjectProfile? UpdateProfile(string projectId, UpdateProjectProfileRequest request)
+    {
+        var safeId = PathSanitizer.ToSafeId(projectId);
+        var profile = JsonFileStore.Read<ProjectProfile>(_paths.ProjectProfilePath(safeId));
+        if (profile == null)
+        {
+            return null;
+        }
+
+        var projectRoot = profile.ProjectRoot;
+        if (request.ProjectRoot != null && !string.IsNullOrWhiteSpace(request.ProjectRoot))
+        {
+            projectRoot = Path.GetFullPath(request.ProjectRoot.Trim());
+        }
+
+        if (!Directory.Exists(projectRoot))
+        {
+            throw new InvalidOperationException($"Project root not found: {projectRoot}");
+        }
+
+        profile.ProjectRoot = projectRoot;
+
+        if (!string.IsNullOrWhiteSpace(request.Name))
+        {
+            profile.Name = request.Name.Trim();
+        }
+
+        if (request.ConfigPath != null)
+        {
+            profile.ConfigPath = string.IsNullOrWhiteSpace(request.ConfigPath)
+                ? null
+                : request.ConfigPath.Trim();
+        }
+
+        if (request.ScanRoot != null)
+        {
+            profile.ScanRoot = string.IsNullOrWhiteSpace(request.ScanRoot)
+                ? null
+                : Path.GetFullPath(request.ScanRoot.Trim(), projectRoot);
+        }
+
+        profile.UpdatedAt = DateTimeOffset.UtcNow.ToString("O");
+        JsonFileStore.WriteAtomic(_paths.ProjectProfilePath(safeId), profile);
+
+        var catalog = LoadCatalog();
+        var existing = catalog.Projects.FirstOrDefault(project => project.ProjectId == safeId);
+        if (existing != null)
+        {
+            catalog.Projects.Remove(existing);
+        }
+        catalog.Projects.Add(new ProjectSummary(profile.ProjectId, profile.Name));
+        catalog.LastProjectId = profile.ProjectId;
+        SaveCatalog(catalog);
+
+        return profile;
+    }
+
     public ProjectProfile UpsertProject(CreateProjectRequest request)
     {
         var safeId = PathSanitizer.ToSafeId(string.IsNullOrWhiteSpace(request.ProjectId) ? request.Name : request.ProjectId);

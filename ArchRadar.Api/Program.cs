@@ -27,6 +27,7 @@ builder.Services.AddSingleton<ProjectCatalogService>();
 builder.Services.AddSingleton<SnapshotService>();
 builder.Services.AddSingleton<ScanService>();
 builder.Services.AddSingleton<EditorLauncher>();
+builder.Services.AddSingleton<ProjectConfigService>();
 
 var app = builder.Build();
 app.UseCors();
@@ -79,6 +80,25 @@ app.MapPost("/api/projects", (CreateProjectRequest request, ProjectCatalogServic
     return Results.Ok(new ProjectSummary(profile.ProjectId, profile.Name));
 });
 
+app.MapGet("/api/projects/{projectId}/profile", (string projectId, ProjectCatalogService catalogService) =>
+{
+    var profile = catalogService.GetProfile(projectId);
+    return profile == null ? Results.NotFound() : Results.Ok(profile);
+});
+
+app.MapPut("/api/projects/{projectId}/profile", (string projectId, UpdateProjectProfileRequest request, ProjectCatalogService catalogService) =>
+{
+    try
+    {
+        var profile = catalogService.UpdateProfile(projectId, request);
+        return profile == null ? Results.NotFound() : Results.Ok(profile);
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(ex.Message);
+    }
+});
+
 app.MapGet("/api/projects/{projectId}/snapshots", (string projectId, SnapshotService snapshotService, ProjectCatalogService catalogService) =>
 {
     var profile = catalogService.GetProfile(projectId);
@@ -128,6 +148,30 @@ app.MapGet("/api/projects/{projectId}/snapshots/{snapshotId}/diagram", (string p
     }
 
     return Results.Ok(new DiagramResponse(content));
+});
+
+app.MapGet("/api/projects/{projectId}/config", (string projectId, ProjectCatalogService catalogService, ProjectConfigService configService) =>
+{
+    var profile = catalogService.GetProfile(projectId);
+    if (profile == null)
+    {
+        return Results.NotFound();
+    }
+
+    var response = configService.LoadOrCreateConfig(profile);
+    return Results.Ok(response);
+});
+
+app.MapPut("/api/projects/{projectId}/config", (string projectId, UpdateProjectConfigRequest request, ProjectCatalogService catalogService, ProjectConfigService configService) =>
+{
+    var profile = catalogService.GetProfile(projectId);
+    if (profile == null)
+    {
+        return Results.NotFound();
+    }
+
+    var response = configService.SaveConfig(profile, request.Config);
+    return Results.Ok(response);
 });
 
 app.MapGet("/api/projects/{projectId}/snapshots/{snapshotId}/audit", (string projectId, string snapshotId, SnapshotService snapshotService, ProjectCatalogService catalogService) =>

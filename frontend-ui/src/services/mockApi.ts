@@ -1,9 +1,11 @@
 import type {
+  ArchRadarConfig,
   AuditSnapshot,
   DiagramResponse,
   HealthResponse,
   LayerResponse,
   ProjectSummary,
+  ProjectProfile,
   SnapshotSummary,
 } from '../domain/types';
 
@@ -13,6 +15,55 @@ const mockProjects: ProjectSummary[] = [
   { projectId: 'atlas', name: 'Atlas Platform' },
   { projectId: 'lumen', name: 'Lumen Services' },
 ];
+
+const mockProfiles: Record<string, ProjectProfile> = {
+  atlas: {
+    projectId: 'atlas',
+    name: 'Atlas Platform',
+    projectRoot: 'D:/Projects/Atlas',
+    scanRoot: 'D:/Projects/Atlas/src',
+  },
+  lumen: {
+    projectId: 'lumen',
+    name: 'Lumen Services',
+    projectRoot: 'D:/Projects/Lumen',
+    scanRoot: 'D:/Projects/Lumen/src',
+  },
+};
+
+const mockConfig: ArchRadarConfig = {
+  debugEnabled: false,
+  scan: {
+    mode: 'DirectoryOnly',
+    solutionPath: '',
+    excludeGlobs: ['**/bin/**', '**/obj/**'],
+  },
+  featureRules: {
+    fallbackFeatureKey: 'Unresolved',
+    rules: [
+      {
+        kind: 'NamespacePattern',
+        pattern: 'MyGame.Features.{feature}.',
+        featureKey: '',
+      },
+    ],
+  },
+  externalFolding: {
+    enabled: true,
+    defaultGroupName: 'External',
+    groups: [
+      { name: 'Unity', prefixes: ['UnityEngine', 'UnityEditor'] },
+      { name: 'DotNet', prefixes: ['System', 'Microsoft'] },
+    ],
+  },
+  l2: {
+    enabled: true,
+    targets: [],
+    stopKinds: ['Command', 'Query', 'Event'],
+    maxDepth: 3,
+    edgeKinds: [],
+  },
+};
 
 const mockSnapshots: Record<string, SnapshotSummary[]> = {
   atlas: [
@@ -192,4 +243,46 @@ export const getAudit = async (
 export const openInEditor = async () => {
   await delay(80);
   return { ok: true };
+};
+
+export const getProjectProfile = async (projectId: string): Promise<ProjectProfile> => {
+  await delay(80);
+  return (
+    mockProfiles[projectId] ?? {
+      projectId,
+      name: projectId,
+      projectRoot: 'D:/Projects/Unknown',
+    }
+  );
+};
+
+export const updateProjectProfile = async (
+  projectId: string,
+  profile: ProjectProfile,
+): Promise<ProjectProfile> => {
+  await delay(80);
+  mockProfiles[projectId] = profile;
+  return profile;
+};
+
+export const getProjectConfig = async (): Promise<{ path: string; config: ArchRadarConfig }> => {
+  await delay(80);
+  return { path: 'D:/Projects/mock/.archradar/config.json', config: mockConfig };
+};
+
+export const updateProjectConfig = async (
+  _projectId: string,
+  config: ArchRadarConfig,
+): Promise<{ path: string; config: ArchRadarConfig }> => {
+  await delay(80);
+  return { path: 'D:/Projects/mock/.archradar/config.json', config };
+};
+
+export const startScan = async (projectId: string): Promise<SnapshotSummary> => {
+  await delay(120);
+  return {
+    snapshotId: `${projectId}-scan-${Date.now()}`,
+    timestamp: new Date().toISOString(),
+    label: 'Mock Scan',
+  };
 };

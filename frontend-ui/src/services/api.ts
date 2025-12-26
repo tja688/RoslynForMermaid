@@ -1,9 +1,11 @@
 import type {
+  ArchRadarConfig,
   AuditSnapshot,
   DiagramResponse,
   HealthResponse,
   LayerResponse,
   ProjectSummary,
+  ProjectProfile,
   SnapshotSummary,
 } from '../domain/types';
 
@@ -66,4 +68,42 @@ export const openInEditor = (file: string, line?: number, col?: number) =>
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({ file, line, col }),
+  });
+
+export const getProjectProfile = (projectId: string) =>
+  fetchJson<ProjectProfile>(`/api/projects/${projectId}/profile`);
+
+export const updateProjectProfile = (projectId: string, profile: ProjectProfile) =>
+  fetchJson<ProjectProfile>(`/api/projects/${projectId}/profile`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      name: profile.name,
+      projectRoot: profile.projectRoot,
+      configPath: profile.configPath,
+      scanRoot: profile.scanRoot,
+    }),
+  });
+
+export const getProjectConfig = (projectId: string) =>
+  fetchJson<{ path: string; config: ArchRadarConfig }>(`/api/projects/${projectId}/config`);
+
+export const updateProjectConfig = (projectId: string, config: ArchRadarConfig) =>
+  fetchJson<{ path: string; config: ArchRadarConfig }>(`/api/projects/${projectId}/config`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ config }),
+  });
+
+export const startScan = (projectId: string, notes?: string) =>
+  fetchJson<SnapshotSummary>(`/api/projects/${projectId}/scan`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ notes }),
   });

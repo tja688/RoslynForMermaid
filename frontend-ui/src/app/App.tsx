@@ -2,12 +2,15 @@ import { useEffect, useMemo, useState } from 'react';
 import MermaidPreview from '../components/MermaidPreview';
 import { exportSvg } from '../components/MermaidPreview';
 import SnapshotPanel from '../components/SnapshotPanel';
+import ConfigPanel from '../components/ConfigPanel';
 import ThemePicker from '../components/ThemePicker';
 import type {
+  ArchRadarConfig,
   DataSource,
   AuditEdge,
   AuditSnapshot,
   MermaidRenderOptions,
+  ProjectProfile,
   ProjectSummary,
   SnapshotSummary,
 } from '../domain/types';
@@ -58,6 +61,10 @@ const App = () => {
   const [apiMessage, setApiMessage] = useState('');
   const [apiAvailable, setApiAvailable] = useState(false);
   const [apiVersion, setApiVersion] = useState<string | undefined>(undefined);
+  const [profile, setProfile] = useState<ProjectProfile | null>(null);
+  const [config, setConfig] = useState<ArchRadarConfig | null>(null);
+  const [configPath, setConfigPath] = useState('');
+  const [configBusy, setConfigBusy] = useState(false);
   const [audit, setAudit] = useState<AuditSnapshot | null>(null);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [selectedFeatureKey, setSelectedFeatureKey] = useState<string | null>(null);
@@ -109,6 +116,10 @@ const App = () => {
       setSelectedProjectId('');
       setSelectedSnapshotId('');
       setSelectedLayer('');
+      setProfile(null);
+      setConfig(null);
+      setConfigPath('');
+      setConfigBusy(false);
       setAudit(null);
       setSelectedNodeId(null);
       setSelectedFeatureKey(null);
@@ -125,6 +136,10 @@ const App = () => {
       setSelectedProjectId('');
       setSelectedSnapshotId('');
       setSelectedLayer('');
+      setProfile(null);
+      setConfig(null);
+      setConfigPath('');
+      setConfigBusy(false);
       setAudit(null);
       setSelectedNodeId(null);
       setSelectedFeatureKey(null);
@@ -176,6 +191,40 @@ const App = () => {
       .catch((error) => {
         if (cancelled) return;
         setApiMessage(error instanceof Error ? error.message : 'Failed to load snapshots.');
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [source, selectedProjectId]);
+
+  useEffect(() => {
+    if (source === 'demo' || !selectedProjectId) {
+      setProfile(null);
+      setConfig(null);
+      setConfigPath('');
+      return;
+    }
+
+    const client = source === 'mock' ? mockApi : api;
+    let cancelled = false;
+
+    Promise.all([
+      client.getProjectProfile(selectedProjectId),
+      client.getProjectConfig(selectedProjectId),
+    ])
+      .then(([profileData, configData]) => {
+        if (cancelled) return;
+        setProfile(profileData);
+        setConfig(configData.config);
+        setConfigPath(configData.path);
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        setApiMessage(error instanceof Error ? error.message : 'Failed to load project config.');
+        setProfile(null);
+        setConfig(null);
+        setConfigPath('');
       });
 
     return () => {
@@ -263,6 +312,65 @@ const App = () => {
     };
   }, [source, selectedProjectId, selectedSnapshotId]);
 
+  const handleReloadConfig = async () => {
+    if (!selectedProjectId || source === 'demo') return;
+    const client = source === 'mock' ? mockApi : api;
+    setConfigBusy(true);
+    try {
+      const [profileData, configData] = await Promise.all([
+        client.getProjectProfile(selectedProjectId),
+        client.getProjectConfig(selectedProjectId),
+      ]);
+      setProfile(profileData);
+      setConfig(configData.config);
+      setConfigPath(configData.path);
+      setApiMessage('Config reloaded.');
+    } catch (error) {
+      setApiMessage(error instanceof Error ? error.message : 'Failed to reload config.');
+    } finally {
+      setConfigBusy(false);
+    }
+  };
+
+  const handleSaveConfig = async () => {
+    if (!selectedProjectId || !profile || !config || source === 'demo') return;
+    const client = source === 'mock' ? mockApi : api;
+    setConfigBusy(true);
+    try {
+      const updatedProfile = await client.updateProjectProfile(selectedProjectId, profile);
+      const updatedConfig = await client.updateProjectConfig(selectedProjectId, config);
+      setProfile(updatedProfile);
+      setConfig(updatedConfig.config);
+      setConfigPath(updatedConfig.path);
+      setApiMessage('Config saved.');
+    } catch (error) {
+      setApiMessage(error instanceof Error ? error.message : 'Failed to save config.');
+    } finally {
+      setConfigBusy(false);
+    }
+  };
+
+  const handleScan = async () => {
+    if (!selectedProjectId || !config || source === 'demo') return;
+    const client = source === 'mock' ? mockApi : api;
+    setConfigBusy(true);
+    try {
+      if (profile) {
+        await client.updateProjectProfile(selectedProjectId, profile);
+      }
+      await client.updateProjectConfig(selectedProjectId, config);
+      await client.startScan(selectedProjectId, 'scan from ui');
+      const snapshotsData = await client.getSnapshots(selectedProjectId);
+      setSnapshots(snapshotsData);
+      setSelectedSnapshotId(snapshotsData[0]?.snapshotId ?? '');
+      setApiMessage('Scan complete.');
+    } catch (error) {
+      setApiMessage(error instanceof Error ? error.message : 'Scan failed.');
+    } finally {
+      setConfigBusy(false);
+    }
+  };
+
   const handleExport = () => {
     const svg = document.querySelector('#mermaid-preview svg') as SVGSVGElement | null;
     if (!svg) {
@@ -331,6 +439,21 @@ const App = () => {
               apiAvailable={apiAvailable}
               apiVersion={apiVersion}
             />
+
+            <div className="mt-6">
+              <ConfigPanel
+                profile={profile}
+                config={config}
+                configPath={configPath}
+                disabled={source === 'demo' || (source === 'local' && !apiAvailable)}
+                busy={configBusy}
+                onProfileChange={(next) => setProfile(next)}
+                onConfigChange={(next) => setConfig(next)}
+                onSave={handleSaveConfig}
+                onReload={handleReloadConfig}
+                onScan={handleScan}
+              />
+            </div>
 
             {source === 'demo' && (
               <div className="mt-6 space-y-2">
