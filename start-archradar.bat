@@ -51,7 +51,7 @@ if not errorlevel 1 (
 )
 
 call :log "STEP start backend"
-start "ArchRadar Backend" cmd /k ""cd /d "%ROOT%" && dotnet run --project ArchRadar.Api""
+start "ArchRadar Backend" cmd /k "cd /d ""%ROOT%"" && dotnet run --project ArchRadar.Api"
 
 call :log "STEP wait for /api/health"
 powershell -NoProfile -Command ^
@@ -101,7 +101,7 @@ if not exist "%ROOT%\frontend-ui\node_modules" (
   popd
 )
 
-start "ArchRadar Frontend" cmd /k ""cd /d "%ROOT%\frontend-ui" && set VITE_API_BASE=%API_URL% && pnpm dev""
+start "ArchRadar Frontend" cmd /k "cd /d ""%ROOT%\frontend-ui"" && set VITE_API_BASE=%API_URL% && pnpm dev"
 call :log "DONE"
 echo Started. Logs: %LOG_FILE%
 exit /b 0
