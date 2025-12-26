@@ -44,10 +44,9 @@ public static class MermaidWriter
         builder.AppendLine("flowchart LR");
         builder.AppendLine("  classDef unresolved fill:#ffd6d6,stroke:#cc0000,color:#330000;");
 
-        var index = 0;
         foreach (var feature in featureKeys.OrderBy(key => key, StringComparer.OrdinalIgnoreCase))
         {
-            var id = $"F{index++}";
+            var id = MermaidId.ForFeature(feature);
             featureIdMap[feature] = id;
             builder.AppendLine($"  {id}[\"{Escape(feature)}\"]");
             if (feature.Equals("Unresolved", StringComparison.OrdinalIgnoreCase))
@@ -110,7 +109,7 @@ public static class MermaidWriter
         for (var index = 0; index < nodes.Count; index++)
         {
             var node = nodes[index];
-            var id = $"N{index}";
+            var id = MermaidId.ForNode(node.Id);
             nodeIdMap[node.Id] = id;
             builder.AppendLine($"  {id}[\"{Escape(GetShortLabel(node))}\"]");
             if (node.Kind == AuditNodeKind.Unresolved)
@@ -154,7 +153,7 @@ public static class MermaidWriter
         for (var index = 0; index < nodes.Count; index++)
         {
             var node = nodes[index];
-            var id = $"N{index}";
+            var id = MermaidId.ForNode(node.Id);
             nodeIdMap[node.Id] = id;
             builder.AppendLine($"  {id}[\"{Escape(GetShortLabel(node))}\"]");
             if (node.Kind == AuditNodeKind.Unresolved)

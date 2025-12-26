@@ -1,4 +1,5 @@
 <Solution>
   <Project Path="ArchRadar.Cli/ArchRadar.Cli.csproj" />
   <Project Path="ArchRadar.Core/ArchRadar.Core.csproj" />
+  <Project Path="ArchRadar.Api/ArchRadar.Api.csproj" />
 </Solution>

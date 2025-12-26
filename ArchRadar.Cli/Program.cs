@@ -65,19 +65,12 @@ DebugLog.Write($"扫描完成: nodes={graph.Nodes.Count}, edges={graph.Edges.Cou
 var snapshotDir = Path.Combine(fullPath, ".archradar", "snapshots", DateTime.Now.ToString("yyyy-MM-dd_HHmmss"));
 Directory.CreateDirectory(snapshotDir);
 
-var l0Dir = Path.Combine(snapshotDir, "L0");
-var l1Dir = Path.Combine(snapshotDir, "L1");
-var l2Dir = Path.Combine(snapshotDir, "L2");
-Directory.CreateDirectory(l0Dir);
-Directory.CreateDirectory(l1Dir);
-Directory.CreateDirectory(l2Dir);
-
 var auditPath = Path.Combine(snapshotDir, "audit.json");
 AuditJsonWriter.Write(auditPath, graph);
 DebugLog.Write($"写入 audit.json: {auditPath}");
 
 var graphForMermaid = ExternalFoldingProcessor.Apply(graph, config.ExternalFolding);
-var mermaidPath = Path.Combine(l0Dir, "L0.mmd");
+var mermaidPath = Path.Combine(snapshotDir, "L0.mmd");
 MermaidWriter.WriteL0(mermaidPath, graphForMermaid);
 DebugLog.Write($"写入 L0.mmd: {mermaidPath}");
 
@@ -97,50 +90,51 @@ if (featureKeys.Count == 0)
 foreach (var featureKey in featureKeys)
 {
     var safeFeature = SanitizeFileName(featureKey);
-    var l1Path = Path.Combine(l1Dir, $"L1_{safeFeature}.mmd");
+    var l1Path = Path.Combine(snapshotDir, $"L1_{safeFeature}.mmd");
     MermaidWriter.WriteL1(l1Path, graph, featureKey);
     DebugLog.Write($"写入 L1.mmd: feature={featureKey}, path={l1Path}");
 }
 
-var defaultL2Config = new L2Config
+var l2Config = ResolveL2Config(config);
+if (l2Config.Enabled)
 {
-    Enabled = true,
-    MaxDepth = 3,
-    StopKinds = new List<string> { "Command", "Query", "Event" }
-};
+    var l2Targets = graphForMermaid.Nodes
+        .Where(node => !IsL2Excluded(node))
+        .OrderBy(node => node.NameDisplay, StringComparer.OrdinalIgnoreCase)
+        .ToList();
 
-var l2Targets = graphForMermaid.Nodes
-    .Where(node => !IsL2Excluded(node))
-    .OrderBy(node => node.NameDisplay, StringComparer.OrdinalIgnoreCase)
-    .ToList();
+    if (l2Targets.Count == 0)
+    {
+        DebugLog.Write("L2 未生成: 没有可用的目标节点");
+    }
+    else
+    {
+        var l2NameCounter = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (var node in l2Targets)
+        {
+            var baseName = GetShortName(node.NameDisplay);
+            var safeName = SanitizeFileName(baseName);
+            if (l2NameCounter.TryGetValue(safeName, out var count))
+            {
+                count++;
+                l2NameCounter[safeName] = count;
+                safeName = $"{safeName}_{count}";
+            }
+            else
+            {
+                l2NameCounter[safeName] = 1;
+            }
 
-if (l2Targets.Count == 0)
-{
-    DebugLog.Write("L2 未生成: 没有可用的目标节点");
+            var l2Path = Path.Combine(snapshotDir, $"L2_{safeName}.mmd");
+            MermaidWriter.WriteL2(l2Path, graphForMermaid, node.Id, l2Config);
+        }
+
+        DebugLog.Write($"L2 输出完成: targets={l2Targets.Count}");
+    }
 }
 else
 {
-    var l2NameCounter = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-    foreach (var node in l2Targets)
-    {
-        var baseName = GetShortName(node.NameDisplay);
-        var safeName = SanitizeFileName(baseName);
-        if (l2NameCounter.TryGetValue(safeName, out var count))
-        {
-            count++;
-            l2NameCounter[safeName] = count;
-            safeName = $"{safeName}_{count}";
-        }
-        else
-        {
-            l2NameCounter[safeName] = 1;
-        }
-
-        var l2Path = Path.Combine(l2Dir, $"L2_{safeName}.mmd");
-        MermaidWriter.WriteL2(l2Path, graphForMermaid, node.Id, defaultL2Config);
-    }
-
-    DebugLog.Write($"L2 输出完成: targets={l2Targets.Count}");
+    DebugLog.Write("L2 已禁用: config.L2.Enabled = false");
 }
 
 Console.WriteLine($"扫描完成: {fullPath}");
@@ -236,4 +230,19 @@ static string GetShortName(string text)
 
     var lastDot = name.LastIndexOf('.');
     return lastDot >= 0 ? name[(lastDot + 1)..] : name;
+}
+
+static L2Config ResolveL2Config(ArchRadarConfig config)
+{
+    if (config.L2.Enabled)
+    {
+        return config.L2;
+    }
+
+    return new L2Config
+    {
+        Enabled = true,
+        MaxDepth = 3,
+        StopKinds = new List<string> { "Command", "Query", "Event" }
+    };
 }
