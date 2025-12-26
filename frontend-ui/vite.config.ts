@@ -14,5 +14,11 @@ export default defineConfig({
     port: 5173,
     // 若 5173 被占用，直接报错而不是自动切换到 5174
     strictPort: true,
+    proxy: {
+      '/api': {
+        target: 'http://localhost:5157',
+        changeOrigin: true,
+      },
+    },
   },
 })

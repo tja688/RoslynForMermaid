@@ -43,6 +43,14 @@ if not exist "%CONFIG_PATH%" (
 )
 call :log "CONFIG_PATH=%CONFIG_PATH%"
 
+if exist "%ROOT%\frontend-ui\.env.local" (
+  for /f "tokens=1,2 delims==" %%a in ('findstr /i "^VITE_API_BASE=" "%ROOT%\frontend-ui\.env.local"') do set ENV_BASE=%%b
+  if defined ENV_BASE (
+    call :log "ENV.VITE_API_BASE=%ENV_BASE%"
+    if /i not "%ENV_BASE%"=="%API_URL%" call :log "WARN env.local base differs from API_URL"
+  )
+)
+
 where code >nul 2>&1
 if not errorlevel 1 (
   set ARCHRADAR_EDITOR=code
@@ -102,6 +110,35 @@ if not exist "%ROOT%\frontend-ui\node_modules" (
 )
 
 start "ArchRadar Frontend" cmd /k "cd /d ""%ROOT%\frontend-ui"" && set VITE_API_BASE=%API_URL% && pnpm dev"
+call :log "STEP open browser"
+start "" "http://localhost:5173/"
+call :log "STEP proxy health check"
+powershell -NoProfile -Command ^
+  "$ok=$false;" ^
+  "for($i=0;$i -lt 20;$i++){" ^
+  "  try{" ^
+  "    $r=Invoke-RestMethod -Method Get -Uri 'http://localhost:5173/api/health' -TimeoutSec 3;" ^
+  "    if($r.ok){$ok=$true; break}" ^
+  "  } catch { Start-Sleep -Seconds 1 }" ^
+  "}" ^
+  "if(-not $ok){ exit 1 }"
+if errorlevel 1 (
+  call :log "ERROR proxy health check failed"
+  echo Proxy health check failed. Check Vite logs or VITE_API_BASE.
+  exit /b 1
+)
+call :log "OK proxy health check"
+call :log "STEP client health check"
+powershell -NoProfile -Command ^
+  "$env:VITE_API_BASE='%API_URL%';" ^
+  "$url='%API_URL%/api/health';" ^
+  "try{ $r=Invoke-RestMethod -Method Get -Uri $url -TimeoutSec 3; Write-Host ('client health ok: ' + $r.version) } catch { Write-Host ('client health failed: ' + $_.Exception.Message); exit 1 }"
+if errorlevel 1 (
+  call :log "ERROR client health check failed"
+  echo Client health check failed. Check backend logs or VITE_API_BASE.
+  exit /b 1
+)
+call :log "OK client health check"
 call :log "DONE"
 echo Started. Logs: %LOG_FILE%
 exit /b 0

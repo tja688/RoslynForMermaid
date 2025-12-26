@@ -11,10 +11,12 @@ namespace ArchRadar.Api.Services;
 public sealed class ScanService
 {
     private readonly WorkspacePaths _paths;
+    private readonly ILogger<ScanService> _logger;
 
-    public ScanService(WorkspacePaths paths)
+    public ScanService(WorkspacePaths paths, ILogger<ScanService> logger)
     {
         _paths = paths;
+        _logger = logger;
     }
 
     public async Task<SnapshotIndex> RunScanAsync(ProjectProfile profile, string? notes)
@@ -31,12 +33,14 @@ public sealed class ScanService
             throw new InvalidOperationException("Config file not found. Provide .archradar/config.json or archradar.config.json.");
         }
 
+        _logger.LogInformation("Scan config path={ConfigPath}", configPath);
         var config = ConfigLoader.Load(configPath);
         DebugLog.Writer = message => { };
         DebugLog.Enabled = config.DebugEnabled;
 
         var featureEngine = new FeatureRuleEngine(config.FeatureRules);
         var scanRoot = string.IsNullOrWhiteSpace(profile.ScanRoot) ? projectRoot : profile.ScanRoot!;
+        _logger.LogInformation("Scan mode={Mode} root={Root}", config.Scan.Mode, scanRoot);
 
         var graph = await RunScanAsync(config, featureEngine, scanRoot, configPath, projectRoot);
         var snapshotId = DateTime.Now.ToString("yyyy-MM-dd_HHmmss");
@@ -71,6 +75,10 @@ public sealed class ScanService
                 layers.Add(new LayerEntry { LayerId = $"L2:{entry.DisplayName}", FileName = fileName });
             }
         }
+        else
+        {
+            _logger.LogInformation("L2 disabled by config");
+        }
 
         var index = new SnapshotIndex
         {
@@ -84,6 +92,7 @@ public sealed class ScanService
         };
 
         JsonFileStore.WriteAtomic(_paths.SnapshotIndexPath(safeProjectId, snapshotId), index);
+        _logger.LogInformation("Snapshot saved id={SnapshotId} root={Root}", snapshotId, snapshotRoot);
         return index;
     }
 
@@ -116,7 +125,9 @@ public sealed class ScanService
         if (!string.IsNullOrWhiteSpace(config.Scan.SolutionPath))
         {
             var baseDir = Path.GetDirectoryName(configPath) ?? scanRoot;
-            return Path.GetFullPath(config.Scan.SolutionPath!, baseDir);
+            var raw = config.Scan.SolutionPath!.Trim();
+            var trimmed = raw.Trim('"');
+            return Path.GetFullPath(trimmed, baseDir);
         }
 
         return Directory.EnumerateFiles(scanRoot, "*.sln", SearchOption.TopDirectoryOnly).FirstOrDefault();

@@ -2,6 +2,7 @@ using System.Reflection;
 using ArchRadar.Api.Models;
 using ArchRadar.Api.Services;
 using Microsoft.Extensions.FileProviders;
+using System.Diagnostics;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -32,6 +33,20 @@ builder.Services.AddSingleton<ProjectConfigService>();
 var app = builder.Build();
 app.UseCors();
 
+app.Use(async (context, next) =>
+{
+    var logger = context.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("Http");
+    var sw = Stopwatch.StartNew();
+    logger.LogInformation("REQ {Method} {Path}", context.Request.Method, context.Request.Path);
+    await next();
+    sw.Stop();
+    logger.LogInformation("RES {StatusCode} {Method} {Path} {Elapsed}ms",
+        context.Response.StatusCode,
+        context.Request.Method,
+        context.Request.Path,
+        sw.ElapsedMilliseconds);
+});
+
 var uiRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "frontend-ui", "dist"));
 if (Directory.Exists(uiRoot))
 {
@@ -49,9 +64,11 @@ if (Directory.Exists(uiRoot))
     });
 }
 
-app.MapGet("/api/health", () =>
+app.MapGet("/api/health", (ILoggerFactory loggerFactory) =>
 {
+    var logger = loggerFactory.CreateLogger("Health");
     var version = Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "dev";
+    logger.LogInformation("Health ok version={Version}", version);
     return Results.Ok(new HealthResponse(true, version));
 });
 
@@ -64,10 +81,12 @@ app.MapGet("/api/projects", (ProjectCatalogService catalogService) =>
     return Results.Ok(projects);
 });
 
-app.MapPost("/api/projects", (CreateProjectRequest request, ProjectCatalogService catalogService) =>
+app.MapPost("/api/projects", (CreateProjectRequest request, ProjectCatalogService catalogService, ILoggerFactory loggerFactory) =>
 {
+    var logger = loggerFactory.CreateLogger("Projects");
     if (string.IsNullOrWhiteSpace(request.ProjectRoot) || !Directory.Exists(request.ProjectRoot))
     {
+        logger.LogWarning("Create project failed: invalid root {Root}", request.ProjectRoot);
         return Results.BadRequest("ProjectRoot is required and must exist.");
     }
 
@@ -77,6 +96,7 @@ app.MapPost("/api/projects", (CreateProjectRequest request, ProjectCatalogServic
     }
 
     var profile = catalogService.UpsertProject(request);
+    logger.LogInformation("Project upserted id={ProjectId} root={Root}", profile.ProjectId, profile.ProjectRoot);
     return Results.Ok(new ProjectSummary(profile.ProjectId, profile.Name));
 });
 
@@ -150,27 +170,33 @@ app.MapGet("/api/projects/{projectId}/snapshots/{snapshotId}/diagram", (string p
     return Results.Ok(new DiagramResponse(content));
 });
 
-app.MapGet("/api/projects/{projectId}/config", (string projectId, ProjectCatalogService catalogService, ProjectConfigService configService) =>
+app.MapGet("/api/projects/{projectId}/config", (string projectId, ProjectCatalogService catalogService, ProjectConfigService configService, ILoggerFactory loggerFactory) =>
 {
+    var logger = loggerFactory.CreateLogger("Config");
     var profile = catalogService.GetProfile(projectId);
     if (profile == null)
     {
+        logger.LogWarning("Config get failed: project not found {ProjectId}", projectId);
         return Results.NotFound();
     }
 
     var response = configService.LoadOrCreateConfig(profile);
+    logger.LogInformation("Config loaded path={Path}", response.Path);
     return Results.Ok(response);
 });
 
-app.MapPut("/api/projects/{projectId}/config", (string projectId, UpdateProjectConfigRequest request, ProjectCatalogService catalogService, ProjectConfigService configService) =>
+app.MapPut("/api/projects/{projectId}/config", (string projectId, UpdateProjectConfigRequest request, ProjectCatalogService catalogService, ProjectConfigService configService, ILoggerFactory loggerFactory) =>
 {
+    var logger = loggerFactory.CreateLogger("Config");
     var profile = catalogService.GetProfile(projectId);
     if (profile == null)
     {
+        logger.LogWarning("Config save failed: project not found {ProjectId}", projectId);
         return Results.NotFound();
     }
 
     var response = configService.SaveConfig(profile, request.Config);
+    logger.LogInformation("Config saved path={Path}", response.Path);
     return Results.Ok(response);
 });
 
@@ -191,16 +217,28 @@ app.MapGet("/api/projects/{projectId}/snapshots/{snapshotId}/audit", (string pro
     return Results.Ok(audit);
 });
 
-app.MapPost("/api/projects/{projectId}/scan", async (string projectId, ScanRequest? request, ProjectCatalogService catalogService, ScanService scanService) =>
+app.MapPost("/api/projects/{projectId}/scan", async (string projectId, ScanRequest? request, ProjectCatalogService catalogService, ScanService scanService, ILoggerFactory loggerFactory) =>
 {
+    var logger = loggerFactory.CreateLogger("Scan");
     var profile = catalogService.GetProfile(projectId);
     if (profile == null)
     {
+        logger.LogWarning("Scan failed: project not found {ProjectId}", projectId);
         return Results.NotFound();
     }
 
-    var result = await scanService.RunScanAsync(profile, request?.Notes);
-    return Results.Ok(new SnapshotSummary(result.SnapshotId, result.Timestamp, result.Notes));
+    try
+    {
+        logger.LogInformation("Scan start project={ProjectId} root={Root}", profile.ProjectId, profile.ProjectRoot);
+        var result = await scanService.RunScanAsync(profile, request?.Notes);
+        logger.LogInformation("Scan done snapshot={SnapshotId} nodes={Nodes} edges={Edges}", result.SnapshotId, result.NodeCount, result.EdgeCount);
+        return Results.Ok(new SnapshotSummary(result.SnapshotId, result.Timestamp, result.Notes));
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Scan failed project={ProjectId}", profile.ProjectId);
+        return Results.Problem(ex.Message);
+    }
 });
 
 app.MapPost("/api/open", (OpenRequest request, EditorLauncher launcher) =>

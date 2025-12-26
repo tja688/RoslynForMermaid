@@ -37,6 +37,14 @@ const ConfigPanel = ({
     );
   }
 
+  const normalizePath = (value: string) => {
+    const trimmed = value.trim();
+    if (trimmed.startsWith('"') && trimmed.endsWith('"') && trimmed.length > 1) {
+      return trimmed.slice(1, -1);
+    }
+    return trimmed;
+  };
+
   const updateScan = (next: Partial<ArchRadarConfig['scan']>) => {
     onConfigChange({ ...config, scan: { ...config.scan, ...next } });
   };
@@ -88,7 +96,7 @@ const ConfigPanel = ({
               value={profile.scanRoot ?? ''}
               disabled={disabled}
               onChange={(event) =>
-                onProfileChange({ ...profile, scanRoot: event.target.value })
+                onProfileChange({ ...profile, scanRoot: normalizePath(event.target.value) })
               }
             />
           </label>
@@ -119,7 +127,7 @@ const ConfigPanel = ({
               className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800"
               value={config.scan.solutionPath ?? ''}
               disabled={disabled}
-              onChange={(event) => updateScan({ solutionPath: event.target.value })}
+              onChange={(event) => updateScan({ solutionPath: normalizePath(event.target.value) })}
             />
           </label>
           <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wide text-slate-500">

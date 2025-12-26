@@ -1,9 +1,10 @@
 {
-  "notes": "ArchRadar 外置规则配置：此文件是唯一规则事实来源。",
+  "notes": "ArchRadar \u5916\u7F6E\u89C4\u5219\u914D\u7F6E\uFF1A\u6B64\u6587\u4EF6\u662F\u552F\u4E00\u89C4\u5219\u4E8B\u5B9E\u6765\u6E90\u3002",
   "debugEnabled": true,
+  "legacyL2Detected": true,
   "scan": {
-    "notes": "mode 可选：DirectoryOnly / MsBuildSolution。MsBuildSolution 需要 solutionPath。",
-    "mode": "DirectoryOnly",
+    "notes": "mode \u53EF\u9009\uFF1ADirectoryOnly / MsBuildSolution\u3002MsBuildSolution \u9700\u8981 solutionPath\u3002",
+    "mode": "MsBuildSolution",
     "solutionPath": "",
     "excludeGlobs": [
       "**/bin/**",
@@ -14,41 +15,60 @@
     ]
   },
   "featureRules": {
-    "notes": "Feature 归属规则，按顺序匹配，优先命名空间。",
+    "notes": "Feature \u5F52\u5C5E\u89C4\u5219\uFF0C\u6309\u987A\u5E8F\u5339\u914D\uFF0C\u4F18\u5148\u547D\u540D\u7A7A\u95F4\u3002",
     "fallbackFeatureKey": "Unresolved",
     "rules": [
       {
         "kind": "NamespacePattern",
         "pattern": "ThatGameJam.Features.{feature}.",
-        "notes": "命名空间示例：ThatGameJam.Features.Inventory.Controllers"
+        "notes": "\u547D\u540D\u7A7A\u95F4\u793A\u4F8B\uFF1AThatGameJam.Features.Inventory.Controllers"
       },
       {
         "kind": "FolderPattern",
         "pattern": "Assets/Scripts/Features/{feature}/",
-        "notes": "路径示例：Assets/Scripts/Features/Inventory/..."
+        "notes": "\u8DEF\u5F84\u793A\u4F8B\uFF1AAssets/Scripts/Features/Inventory/..."
       }
     ]
   },
   "externalFolding": {
+    "notes": "\u5916\u90E8\u4F9D\u8D56\u6298\u53E0\uFF1A\u547D\u4E2D\u524D\u7F00\u540E\u805A\u5408\u4E3A External::\u003Cname\u003E\u3002",
     "enabled": true,
-    "notes": "外部依赖折叠：命中前缀后聚合为 External::<name>。",
     "defaultGroupName": "External",
     "groups": [
       {
         "name": "Unity",
-        "prefixes": ["UnityEngine", "UnityEditor", "Unity"],
-        "notes": "Unity 内置命名空间"
+        "prefixes": [
+          "UnityEngine",
+          "UnityEditor",
+          "Unity"
+        ],
+        "notes": "Unity \u5185\u7F6E\u547D\u540D\u7A7A\u95F4"
       },
       {
         "name": "DotNet",
-        "prefixes": ["System", "Microsoft"],
+        "prefixes": [
+          "System",
+          "Microsoft"
+        ],
         "notes": ".NET BCL"
       },
       {
         "name": "ThirdParty",
-        "prefixes": ["Cysharp", "DG.Tweening", "Spine"],
-        "notes": "常见第三方库"
+        "prefixes": [
+          "Cysharp",
+          "DG.Tweening",
+          "Spine"
+        ],
+        "notes": "\u5E38\u89C1\u7B2C\u4E09\u65B9\u5E93"
       }
     ]
+  },
+  "l2": {
+    "notes": "",
+    "enabled": true,
+    "targets": [],
+    "stopKinds": [],
+    "maxDepth": 2,
+    "edgeKinds": []
   }
 }

@@ -9,7 +9,15 @@ import type {
   SnapshotSummary,
 } from '../domain/types';
 
-const API_BASE = import.meta.env.VITE_API_BASE ?? '';
+const API_BASE_RAW = import.meta.env.VITE_API_BASE ?? '';
+const API_BASE = API_BASE_RAW.trim();
+
+if (import.meta.env.DEV) {
+  console.info('[API] base', API_BASE || '(empty)');
+  if (API_BASE_RAW !== API_BASE) {
+    console.warn('[API] base trimmed', JSON.stringify(API_BASE_RAW));
+  }
+}
 
 const resolveUrl = (path: string) => {
   if (!API_BASE) return path;
@@ -23,16 +31,28 @@ const resolveUrl = (path: string) => {
 };
 
 const fetchJson = async <T>(path: string, init?: RequestInit): Promise<T> => {
-  const response = await fetch(resolveUrl(path), {
+  const url = resolveUrl(path);
+  if (import.meta.env.DEV) {
+    console.info('[API] request', url, init?.method ?? 'GET');
+  }
+
+  const response = await fetch(url, {
     headers: { Accept: 'application/json', ...(init?.headers ?? {}) },
     ...init,
   });
 
   if (!response.ok) {
+    if (import.meta.env.DEV) {
+      console.warn('[API] response', response.status, response.statusText, url);
+    }
     throw new Error(`Request failed: ${response.status} ${response.statusText}`);
   }
 
-  return response.json() as Promise<T>;
+  const json = (await response.json()) as T;
+  if (import.meta.env.DEV) {
+    console.info('[API] response ok', url, json);
+  }
+  return json;
 };
 
 export const getHealth = () => fetchJson<HealthResponse>('/api/health');

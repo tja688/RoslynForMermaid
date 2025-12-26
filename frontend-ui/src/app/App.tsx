@@ -100,10 +100,15 @@ const App = () => {
         setApiVersion(data.version);
         setApiMessage('');
       })
-      .catch(() => {
+      .catch((error) => {
+        const base = import.meta.env.VITE_API_BASE || '(empty)';
         setApiAvailable(false);
         setApiVersion(undefined);
-        setApiMessage('Backend not started (using demo mode).');
+        setApiMessage(
+          error instanceof Error
+            ? `Backend not started. VITE_API_BASE=${base} (${error.message})`
+            : `Backend not started. VITE_API_BASE=${base}`,
+        );
       });
   }, []);
 
@@ -638,6 +643,9 @@ const App = () => {
                   API status messages will show here.
                 </div>
               )}
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] text-slate-500">
+                API base: {JSON.stringify(import.meta.env.VITE_API_BASE || '(empty)')}
+              </div>
 
               {renderError ? (
                 <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
