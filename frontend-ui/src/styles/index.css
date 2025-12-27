@@ -38,6 +38,8 @@ body {
 }
 
 .ar-workbench {
+  height: 100vh;
+  overflow: hidden;
   background:
     radial-gradient(circle at 12% 20%, rgba(255, 236, 206, 0.8), transparent 45%),
     radial-gradient(circle at 85% 12%, rgba(214, 235, 255, 0.6), transparent 40%),
@@ -192,6 +194,20 @@ body {
   box-shadow: 0 10px 20px -16px rgba(180, 83, 9, 0.6);
 }
 
+.ar-button-primary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.ar-button-xl {
+  min-width: 180px;
+  padding: 0.85rem 1.6rem;
+  font-size: 0.9rem;
+  letter-spacing: 0.05em;
+}
+
 .ar-chip-button {
   border-radius: 999px;
   border: 1px solid var(--ar-border-strong);
@@ -271,6 +287,56 @@ body {
   cursor: not-allowed;
 }
 
+.ar-tab {
+  border-radius: 999px;
+  border: 1px solid var(--ar-border);
+  background: rgba(255, 255, 255, 0.5);
+  padding: 0.45rem 1.1rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--ar-ink-muted);
+  cursor: pointer;
+  transition: background 160ms ease, transform 160ms ease, color 160ms ease;
+}
+
+.ar-tab:hover {
+  background: rgba(255, 255, 255, 0.8);
+  transform: translateY(-1px);
+}
+
+.ar-tab-active {
+  border-color: rgba(242, 162, 60, 0.5);
+  background: rgba(255, 255, 255, 0.95);
+  color: var(--ar-ink);
+  box-shadow: 0 8px 20px -16px rgba(180, 83, 9, 0.35);
+}
+
+.ar-resize-handle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 10px;
+  height: 100%;
+  cursor: col-resize;
+}
+
+.ar-resize-handle::after {
+  content: "";
+  position: absolute;
+  top: 24px;
+  bottom: 24px;
+  left: 4px;
+  width: 2px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.2);
+  opacity: 0;
+  transition: opacity 160ms ease;
+}
+
+.ar-resize-handle:hover::after {
+  opacity: 1;
+}
+
 .ar-callout {
   border-radius: 16px;
   border: 1px solid var(--ar-border);
@@ -313,6 +379,16 @@ body {
   touch-action: none;
 }
 
+.mermaid-surface svg g.node rect,
+.mermaid-surface svg g.node polygon,
+.mermaid-surface svg g.node circle,
+.mermaid-surface svg g.node ellipse,
+.mermaid-surface svg g.edgePath path,
+.mermaid-surface svg g.edgeLabel text {
+  transition: stroke 120ms ease, stroke-width 120ms ease, opacity 120ms ease, filter 120ms ease,
+    fill 120ms ease;
+}
+
 .mermaid-surface svg g.node.archradar-selected rect,
 .mermaid-surface svg g.node.archradar-selected polygon,
 .mermaid-surface svg g.node.archradar-selected circle,
@@ -348,6 +424,43 @@ body {
 
 .archradar-muted {
   opacity: 0.4;
+}
+
+.mermaid-surface svg g.node.archradar-clicked rect,
+.mermaid-surface svg g.node.archradar-clicked polygon,
+.mermaid-surface svg g.node.archradar-clicked circle,
+.mermaid-surface svg g.node.archradar-clicked ellipse {
+  animation: ar-click-flash 280ms ease;
+}
+
+.mermaid-surface svg g.edgePath.archradar-clicked path {
+  animation: ar-click-flash-line 280ms ease;
+}
+
+.mermaid-surface svg g.edgeLabel.archradar-clicked text {
+  animation: ar-click-flash-line 280ms ease;
+}
+
+@keyframes ar-click-flash {
+  0% {
+    stroke: #fb7185;
+    stroke-width: 3px;
+    filter: drop-shadow(0 4px 8px rgba(251, 113, 133, 0.35));
+  }
+  100% {
+    stroke-width: 2px;
+    filter: none;
+  }
+}
+
+@keyframes ar-click-flash-line {
+  0% {
+    stroke: #fb7185;
+    stroke-width: 3px;
+  }
+  100% {
+    stroke-width: 2px;
+  }
 }
 
 @keyframes ar-fade-in {

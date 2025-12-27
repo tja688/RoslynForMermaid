@@ -1,34 +1,96 @@
-import type {
-  ArchRadarConfig,
-  FeatureRule,
-  ProjectProfile,
-} from '../domain/types';
+import { useEffect, useMemo } from 'react';
+import type { ArchRadarConfig, FeatureRule, ProjectProfile } from '../domain/types';
 
 interface ConfigPanelProps {
   profile: ProjectProfile | null;
   config: ArchRadarConfig | null;
-  configPath: string;
   disabled?: boolean;
   busy?: boolean;
   onProfileChange: (next: ProjectProfile) => void;
   onConfigChange: (next: ArchRadarConfig) => void;
   onSave: () => void;
   onReload: () => void;
-  onScan: () => void;
+  onValidationChange?: (state: { hasErrors: boolean; hasWarnings: boolean }) => void;
 }
 
 const ConfigPanel = ({
   profile,
   config,
-  configPath,
   disabled,
   busy,
   onProfileChange,
   onConfigChange,
   onSave,
   onReload,
-  onScan,
+  onValidationChange,
 }: ConfigPanelProps) => {
+  const { issues, hasErrors, hasWarnings, ruleErrors, groupErrors } = useMemo(() => {
+    if (!config) {
+      return {
+        issues: [] as { level: 'error' | 'warn'; message: string }[],
+        hasErrors: false,
+        hasWarnings: false,
+        ruleErrors: new Set<number>(),
+        groupErrors: new Set<number>(),
+      };
+    }
+
+    const nextIssues: { level: 'error' | 'warn'; message: string }[] = [];
+    const nextRuleErrors = new Set<number>();
+    const nextGroupErrors = new Set<number>();
+
+    if (!config.featureRules.fallbackFeatureKey?.trim()) {
+      nextIssues.push({ level: 'error', message: 'Fallback feature key is required.' });
+    }
+
+    config.featureRules.rules.forEach((rule, index) => {
+      if (!rule.pattern.trim()) {
+        nextRuleErrors.add(index);
+        nextIssues.push({ level: 'error', message: `Feature rule ${index + 1} needs a pattern.` });
+      }
+    });
+
+    if (config.externalFolding.enabled) {
+      config.externalFolding.groups.forEach((group, index) => {
+        if (!group.name.trim()) {
+          nextGroupErrors.add(index);
+          nextIssues.push({ level: 'error', message: `External group ${index + 1} needs a name.` });
+        }
+      });
+    }
+
+    if (config.l2.enabled && config.l2.maxDepth <= 0) {
+      nextIssues.push({ level: 'error', message: 'L2 max depth must be greater than 0.' });
+    }
+
+    if (config.scan.mode === 'MsBuildSolution' && !config.scan.solutionPath) {
+      nextIssues.push({ level: 'warn', message: 'Solution path empty; .sln will be auto-detected.' });
+    }
+
+    if (
+      config.scan.mode === 'MsBuildSolution' &&
+      config.scan.solutionPath &&
+      !config.scan.solutionPath.toLowerCase().endsWith('.sln')
+    ) {
+      nextIssues.push({ level: 'warn', message: 'Solution path should point to a .sln file.' });
+    }
+
+    const nextHasErrors = nextIssues.some((issue) => issue.level === 'error');
+    const nextHasWarnings = nextIssues.some((issue) => issue.level === 'warn');
+
+    return {
+      issues: nextIssues,
+      hasErrors: nextHasErrors,
+      hasWarnings: nextHasWarnings,
+      ruleErrors: nextRuleErrors,
+      groupErrors: nextGroupErrors,
+    };
+  }, [config]);
+
+  useEffect(() => {
+    onValidationChange?.({ hasErrors, hasWarnings });
+  }, [onValidationChange, hasErrors, hasWarnings]);
+
   if (!profile || !config) {
     return (
       <div className="ar-card-muted">
@@ -78,47 +140,6 @@ const ConfigPanel = ({
     onConfigChange({ ...config, l2: { ...config.l2, ...next } });
   };
 
-  const issues: { level: 'error' | 'warn'; message: string }[] = [];
-  const ruleErrors = new Set<number>();
-  const groupErrors = new Set<number>();
-
-  if (!config.featureRules.fallbackFeatureKey?.trim()) {
-    issues.push({ level: 'error', message: 'Fallback feature key is required.' });
-  }
-
-  config.featureRules.rules.forEach((rule, index) => {
-    if (!rule.pattern.trim()) {
-      ruleErrors.add(index);
-      issues.push({ level: 'error', message: `Feature rule ${index + 1} needs a pattern.` });
-    }
-  });
-
-  if (config.externalFolding.enabled) {
-    config.externalFolding.groups.forEach((group, index) => {
-      if (!group.name.trim()) {
-        groupErrors.add(index);
-        issues.push({ level: 'error', message: `External group ${index + 1} needs a name.` });
-      }
-    });
-  }
-
-  if (config.l2.enabled && config.l2.maxDepth <= 0) {
-    issues.push({ level: 'error', message: 'L2 max depth must be greater than 0.' });
-  }
-
-  if (config.scan.mode === 'MsBuildSolution' && !config.scan.solutionPath) {
-    issues.push({ level: 'warn', message: 'Solution path empty; .sln will be auto-detected.' });
-  }
-
-  if (
-    config.scan.mode === 'MsBuildSolution' &&
-    config.scan.solutionPath &&
-    !config.scan.solutionPath.toLowerCase().endsWith('.sln')
-  ) {
-    issues.push({ level: 'warn', message: 'Solution path should point to a .sln file.' });
-  }
-
-  const hasErrors = issues.some((issue) => issue.level === 'error');
   const actionDisabled = disabled || busy || hasErrors;
 
   return (
@@ -135,31 +156,6 @@ const ConfigPanel = ({
           </ul>
         </div>
       )}
-
-      <div className="ar-card">
-        <h3 className="ar-panel-title">Project Info</h3>
-        <p className="ar-help">Read-only fields from the workspace profile.</p>
-        <div className="mt-3 space-y-3">
-          <div>
-            <div className="ar-label">Project Id</div>
-            <div className="ar-readonly" title={profile.projectId}>
-              {profile.projectId}
-            </div>
-          </div>
-          <div>
-            <div className="ar-label">Project Root</div>
-            <div className="ar-readonly" title={profile.projectRoot}>
-              {profile.projectRoot}
-            </div>
-          </div>
-          <div>
-            <div className="ar-label">Config Path</div>
-            <div className="ar-readonly" title={configPath}>
-              {configPath}
-            </div>
-          </div>
-        </div>
-      </div>
 
       <div className="ar-card">
         <h3 className="ar-panel-title">Scan Roots</h3>
@@ -540,20 +536,12 @@ const ConfigPanel = ({
         >
           Reload
         </button>
-        <button
-          className="ar-button-primary"
-          disabled={actionDisabled}
-          onClick={onScan}
-          type="button"
-        >
-          Start Scan
-        </button>
       </div>
       {busy && (
         <div className="text-[11px] text-slate-500">Working on the requested action...</div>
       )}
       <p className="text-[11px] text-slate-500">
-        Saving updates config only. Scans run only when you click Start Scan.
+        Saving updates config only. Scans run from the Start Scan button below.
       </p>
     </div>
   );

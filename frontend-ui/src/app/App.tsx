@@ -1,7 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type PointerEvent } from 'react';
 import MermaidPreview from '../components/MermaidPreview';
 import { exportSvg } from '../components/MermaidPreview';
-import SnapshotPanel from '../components/SnapshotPanel';
 import ConfigPanel from '../components/ConfigPanel';
 import ThemePicker from '../components/ThemePicker';
 import type {
@@ -23,7 +22,6 @@ import {
   buildFeatureIndex,
   buildL2LayerMap,
   buildNodeIndex,
-  collectNodeEdges,
   findEdge,
   getNodeById,
 } from '../domain/auditMapping';
@@ -41,6 +39,8 @@ const demoMermaid = `flowchart TB
   E --> H[(Snapshot Store)]
   F --> H
   G --> H`;
+
+type ScanPhase = 'idle' | 'preparing' | 'scanning' | 'building' | 'saving' | 'done' | 'failed';
 
 type NavState = {
   projectId: string;
@@ -66,8 +66,11 @@ const App = () => {
   const [fontKey, setFontKey] = useState('default');
   const [source, setSource] = useState<DataSource>('demo');
 
-  const [leftCollapsed, setLeftCollapsed] = useState(false);
-  const [rightCollapsed, setRightCollapsed] = useState(false);
+  const [activeTab, setActiveTab] = useState<'config' | 'mermaid'>('config');
+  const [scanPhase, setScanPhase] = useState<ScanPhase>('idle');
+  const [configValidation, setConfigValidation] = useState({ hasErrors: false, hasWarnings: false });
+  const [hoveredMermaid, setHoveredMermaid] = useState<{ ids: string[]; label?: string } | null>(null);
+  const [leftPanelWidth, setLeftPanelWidth] = useState(320);
 
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [snapshots, setSnapshots] = useState<SnapshotSummary[]>([]);
@@ -98,6 +101,7 @@ const App = () => {
   const [layerParents, setLayerParents] = useState<Record<string, string>>({});
   const desiredSnapshotIdRef = useRef('');
   const desiredLayerRef = useRef('');
+  const resizeStateRef = useRef({ active: false, startX: 0, startWidth: 320 });
 
   const renderOptions: MermaidRenderOptions = useMemo(
     () => ({
@@ -107,6 +111,8 @@ const App = () => {
     }),
     [],
   );
+  const leftPanelMin = 240;
+  const leftPanelMax = 520;
 
   useEffect(() => {
     setRenderError('');
@@ -116,10 +122,6 @@ const App = () => {
   const featureIndex = useMemo(() => buildFeatureIndex(audit), [audit]);
   const l2LayerMap = useMemo(() => buildL2LayerMap(audit), [audit]);
   const selectedNode = useMemo(() => getNodeById(audit, selectedNodeId), [audit, selectedNodeId]);
-  const selectedNodeEdges = useMemo(
-    () => collectNodeEdges(audit, selectedNodeId),
-    [audit, selectedNodeId],
-  );
   const selectedEdge = useMemo(() => {
     if (!selectedEdgeKey) return null;
     const parsed = parseEdgeKey(selectedEdgeKey);
@@ -246,6 +248,7 @@ const App = () => {
       setSelectedFeatureKey(null);
       setSelectedEdgeKey(null);
       setLayerParents({});
+      setScanPhase('idle');
       clearHistory();
     };
 
@@ -485,25 +488,39 @@ const App = () => {
   };
 
   const handleScan = async () => {
-    if (!selectedProjectId || !config || source === 'demo') return;
+    if (!selectedProjectId || !config || source === 'demo' || configValidation.hasErrors) return;
     const client = source === 'mock' ? mockApi : api;
     setConfigBusy(true);
+    setScanPhase('preparing');
     try {
-      setApiMessage('Scanning...');
+      setApiMessage('Preparing scan...');
       if (profile) {
         await client.updateProjectProfile(selectedProjectId, profile);
       }
       await client.updateProjectConfig(selectedProjectId, config);
+      setScanPhase('scanning');
+      setApiMessage('Scanning...');
       await client.startScan(selectedProjectId, 'scan from ui');
+      setScanPhase('building');
+      setApiMessage('Building diagrams...');
       const snapshotsData = await client.getSnapshots(selectedProjectId);
+      setScanPhase('saving');
       setSnapshots(snapshotsData);
       const nextSnapshot = snapshotsData[0]?.snapshotId ?? '';
       desiredSnapshotIdRef.current = nextSnapshot;
+      desiredLayerRef.current = 'L0';
       setSelectedSnapshotId(nextSnapshot);
+      setSelectedLayer('');
+      setSelectedNodeId(null);
+      setSelectedFeatureKey(null);
+      setSelectedEdgeKey(null);
       setLayerParents({});
       clearHistory();
+      setScanPhase('done');
       setApiMessage('Scan complete.');
+      setActiveTab('mermaid');
     } catch (error) {
+      setScanPhase('failed');
       setApiMessage(error instanceof Error ? error.message : 'Scan failed.');
     } finally {
       setConfigBusy(false);
@@ -530,12 +547,38 @@ const App = () => {
     });
   };
 
+  const handleResizeStart = (event: PointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    resizeStateRef.current = {
+      active: true,
+      startX: event.clientX,
+      startWidth: leftPanelWidth,
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const handleResizeMove = (event: PointerEvent<HTMLDivElement>) => {
+    if (!resizeStateRef.current.active) return;
+    const delta = event.clientX - resizeStateRef.current.startX;
+    const nextWidth = Math.min(
+      leftPanelMax,
+      Math.max(leftPanelMin, resizeStateRef.current.startWidth + delta),
+    );
+    setLeftPanelWidth(nextWidth);
+  };
+
+  const handleResizeEnd = (event: PointerEvent<HTMLDivElement>) => {
+    if (!resizeStateRef.current.active) return;
+    resizeStateRef.current.active = false;
+    event.currentTarget.releasePointerCapture(event.pointerId);
+  };
+
   const handleProjectChange = (value: string) => {
     setSelectedProjectId(value);
     setSelectedSnapshotId('');
     setSelectedLayer('');
     desiredSnapshotIdRef.current = '';
-    desiredLayerRef.current = '';
+    desiredLayerRef.current = 'L0';
     setSelectedNodeId(null);
     setSelectedFeatureKey(null);
     setSelectedEdgeKey(null);
@@ -547,7 +590,7 @@ const App = () => {
     setSelectedSnapshotId(value);
     desiredSnapshotIdRef.current = value;
     setSelectedLayer('');
-    desiredLayerRef.current = '';
+    desiredLayerRef.current = 'L0';
     setSelectedNodeId(null);
     setSelectedFeatureKey(null);
     setSelectedEdgeKey(null);
@@ -574,10 +617,6 @@ const App = () => {
         }),
       );
     }
-  };
-
-  const handleLayerChange = (value: string) => {
-    updateLayer(value, { record: true });
   };
 
   const selectFeature = (featureKey: string) => {
@@ -684,38 +723,98 @@ const App = () => {
     updateLayer(target, { record: true });
   };
 
-  const layerChain = useMemo(() => {
-    if (!selectedLayer) return [];
-    const chain: string[] = [];
-    const seen = new Set<string>();
-    let current = selectedLayer;
-    while (current && !seen.has(current)) {
-      seen.add(current);
-      chain.unshift(current);
-      if (current === 'L0') break;
-      const parent = layerParents[current] ?? (current.startsWith('L1:') ? 'L0' : '');
-      current = parent;
-    }
-    if (chain[0] !== 'L0') {
-      chain.unshift('L0');
-    }
-    return chain;
-  }, [selectedLayer, layerParents]);
-
   const selectedProjectName = projects.find((project) => project.projectId === selectedProjectId)?.name;
-  const selectedSnapshotLabel = snapshots.find((snap) => snap.snapshotId === selectedSnapshotId)?.label ?? selectedSnapshotId;
+  const mermaidControlsDisabled = source === 'demo' || (source === 'local' && !apiAvailable);
+  const scanDisabled =
+    mermaidControlsDisabled || !selectedProjectId || !config || configBusy || configValidation.hasErrors;
+
+  const formatLayerLabel = (layer: string) => {
+    if (layer === 'L0') return 'Overview';
+    const parts = layer.split(':');
+    return parts.length > 1 ? parts.slice(1).join(':') : layer;
+  };
+
+  const layerGroups = useMemo(
+    () => [
+      {
+        key: 'L0',
+        title: 'L0 Overview',
+        layers: layers.includes('L0') ? ['L0'] : [],
+      },
+      {
+        key: 'L1',
+        title: 'L1 Features',
+        layers: layers.filter((layer) => layer.startsWith('L1')),
+      },
+      {
+        key: 'L2',
+        title: 'L2 Dependencies',
+        layers: layers.filter((layer) => layer.startsWith('L2')),
+      },
+    ],
+    [layers],
+  );
+
+  const resolveMermaidLabel = (mermaidId: string) => {
+    const node = nodeIndex.mermaidIdToNode.get(mermaidId);
+    if (node) return node.nameDisplay;
+    const featureKey = featureIndex.mermaidIdToFeature.get(mermaidId);
+    if (featureKey) return featureKey;
+    return mermaidId;
+  };
+
+  const hoverDisplay = useMemo(() => {
+    if (!hoveredMermaid) return null;
+    if (hoveredMermaid.ids.length >= 2) {
+      const [fromId, toId] = hoveredMermaid.ids;
+      return {
+        label: `${resolveMermaidLabel(fromId)} -> ${resolveMermaidLabel(toId)}`,
+        meta: hoveredMermaid.label ? `Edge - ${hoveredMermaid.label}` : 'Edge',
+      };
+    }
+    const id = hoveredMermaid.ids[0];
+    const node = nodeIndex.mermaidIdToNode.get(id);
+    if (node) {
+      return { label: node.nameDisplay, meta: node.kind };
+    }
+    const featureKey = featureIndex.mermaidIdToFeature.get(id);
+    if (featureKey) {
+      return { label: featureKey, meta: 'Feature' };
+    }
+    return { label: hoveredMermaid.label ?? id, meta: undefined };
+  }, [hoveredMermaid, featureIndex, nodeIndex]);
+
+  const selectedDisplay = useMemo(() => {
+    if (selectedNode) {
+      return { label: selectedNode.nameDisplay, meta: selectedNode.kind };
+    }
+    if (selectedFeatureKey) {
+      return { label: selectedFeatureKey, meta: 'Feature' };
+    }
+    if (selectedEdge) {
+      const fromNode = getNodeById(audit, selectedEdge.fromId);
+      const toNode = getNodeById(audit, selectedEdge.toId);
+      return {
+        label: `${fromNode?.nameDisplay ?? selectedEdge.fromId} -> ${toNode?.nameDisplay ?? selectedEdge.toId}`,
+        meta: selectedEdge.edgeKind,
+      };
+    }
+    return null;
+  }, [selectedNode, selectedFeatureKey, selectedEdge, audit]);
+  const hoverText = hoverDisplay?.label ?? 'Hover a node';
+  const selectedText = selectedDisplay?.label ?? 'None';
 
   const emptyState = (
     <div className="space-y-3">
       <div className="text-base font-semibold text-slate-700">Canvas ready</div>
       <p className="text-xs text-slate-500">
         {source === 'demo'
-          ? 'Edit the demo Mermaid on the left or switch to a project to load data.'
-          : 'Pick a snapshot or run a scan to generate layers.'}
+          ? 'Switch to Local/Mock to load snapshots, or edit the demo Mermaid in the Config tab.'
+          : 'Pick a snapshot or run a scan in the Config tab to generate layers.'}
       </p>
       {source !== 'demo' && !selectedSnapshotId && (
         <div className="text-[11px] text-slate-400">
-          Use "Start Scan" in the config panel to create a snapshot.
+          Use Start Scan in the Config tab to create a snapshot.
         </div>
       )}
     </div>
@@ -740,9 +839,445 @@ const App = () => {
     return items;
   }, [apiAvailable, apiMessage, apiVersion, renderError, source]);
 
+  const scanSteps = [
+    { key: 'preparing', label: 'Preparing' },
+    { key: 'scanning', label: 'Scanning' },
+    { key: 'building', label: 'Building Diagrams' },
+    { key: 'saving', label: 'Saving Snapshot' },
+    { key: 'done', label: scanPhase === 'failed' ? 'Failed' : 'Done' },
+  ];
+  const scanStepOrder = scanSteps.map((step) => step.key);
+  const scanPhaseIndex =
+    scanPhase === 'idle'
+      ? -1
+      : scanPhase === 'failed'
+        ? scanStepOrder.length - 1
+        : scanStepOrder.indexOf(scanPhase);
+  const scanStatusText =
+    scanPhase === 'idle'
+      ? 'Ready to scan.'
+      : scanPhase === 'preparing'
+        ? 'Preparing workspace and config...'
+        : scanPhase === 'scanning'
+          ? 'Scanning codebase...'
+          : scanPhase === 'building'
+            ? 'Building Mermaid layers...'
+            : scanPhase === 'saving'
+              ? 'Saving snapshot...'
+              : scanPhase === 'done'
+                ? 'Scan complete. Switching to Mermaid view.'
+                : 'Scan failed. Check logs and try again.';
+
+  const configView = (
+    <div className="flex h-full flex-col gap-4 overflow-hidden">
+      <div className="grid gap-4 lg:grid-cols-2">
+        <section className="ar-panel px-5 py-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="ar-panel-title">Data Source</p>
+              <p className="text-xs text-slate-500">Environment and connectivity.</p>
+            </div>
+            <span className="rounded-full border border-black/10 bg-white/70 px-3 py-1 text-[11px] text-slate-500">
+              {source === 'demo' ? 'Demo' : source === 'mock' ? 'Mock API' : 'Local API'}
+            </span>
+          </div>
+          <div className="mt-3 space-y-2">
+            <label className="ar-label">Source</label>
+            <select
+              className="ar-select"
+              value={source}
+              onChange={(event) => {
+                setSource(event.target.value as DataSource);
+                clearHistory();
+                setLayerParents({});
+              }}
+            >
+              <option value="demo">Demo (editable)</option>
+              <option value="local">Local API</option>
+              <option value="mock">Mock API</option>
+            </select>
+            <p className="ar-help">Switch between demo, live API, and mock data.</p>
+          </div>
+          <div
+            className={`mt-3 ar-callout ${
+              source === 'demo'
+                ? 'ar-callout-muted'
+                : apiAvailable
+                  ? 'ar-callout-ok'
+                  : 'ar-callout-warn'
+            }`}
+          >
+            {source === 'demo' ? (
+              <span>Demo mode active. Local scans are disabled.</span>
+            ) : apiAvailable ? (
+              <span>API healthy{apiVersion ? ` (${apiVersion})` : ''}.</span>
+            ) : (
+              <span>API offline. Demo mode is recommended.</span>
+            )}
+          </div>
+        </section>
+
+        <section className="ar-panel px-5 py-4">
+          <p className="ar-panel-title">Project Info</p>
+          <p className="text-xs text-slate-500">Current workspace (read-only).</p>
+          {profile ? (
+            <div className="mt-3 space-y-3">
+              <div>
+                <div className="ar-label">Project</div>
+                <div className="ar-readonly" title={selectedProjectName ?? profile.projectId}>
+                  {selectedProjectName ?? profile.projectId}
+                </div>
+              </div>
+              <div>
+                <div className="ar-label">Project Root</div>
+                <div className="ar-readonly" title={profile.projectRoot}>
+                  {profile.projectRoot}
+                </div>
+              </div>
+              <div>
+                <div className="ar-label">Config Path</div>
+                <div className="ar-readonly" title={configPath || 'n/a'}>
+                  {configPath || 'n/a'}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="mt-3 ar-card-muted">No project selected.</div>
+          )}
+        </section>
+      </div>
+
+      <section className="ar-panel flex min-h-0 flex-1 flex-col overflow-hidden">
+        <div className="px-5 pt-4">
+          <p className="ar-panel-title">Scan Configuration</p>
+          <p className="text-xs text-slate-500">Tune what the scanner includes.</p>
+        </div>
+        <div className="flex-1 overflow-y-auto px-5 pb-5 pt-4">
+          <div className="space-y-4">
+            <ConfigPanel
+              profile={profile}
+              config={config}
+              disabled={mermaidControlsDisabled}
+              busy={configBusy}
+              onProfileChange={(next) => setProfile(next)}
+              onConfigChange={(next) => setConfig(next)}
+              onSave={handleSaveConfig}
+              onReload={handleReloadConfig}
+              onValidationChange={setConfigValidation}
+            />
+
+            <div className="ar-card">
+              <h3 className="ar-panel-title">Appearance</h3>
+              <p className="mb-3 text-xs text-slate-500">
+                Customize Mermaid colors, backgrounds, and fonts.
+              </p>
+              <ThemePicker
+                themeKey={themeKey}
+                backgroundKey={backgroundKey}
+                fontKey={fontKey}
+                onThemeChange={setThemeKey}
+                onBackgroundChange={setBackgroundKey}
+                onFontChange={setFontKey}
+              />
+            </div>
+
+            {source === 'demo' && (
+              <div className="ar-card">
+                <label className="ar-panel-title">Demo Mermaid (editable)</label>
+                <textarea
+                  className="ar-textarea mt-2 h-40"
+                  value={localCode}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    setLocalCode(value);
+                    setCode(value);
+                  }}
+                />
+              </div>
+            )}
+          </div>
+        </div>
+      </section>
+
+      <section className="ar-panel px-5 py-4">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center">
+          <div className="flex flex-col gap-2">
+            <button
+              className="ar-button-primary ar-button-xl"
+              disabled={scanDisabled}
+              onClick={handleScan}
+              type="button"
+            >
+              Start Scan
+            </button>
+            <div className="text-[11px] text-slate-500">
+              {source === 'demo'
+                ? 'Demo mode does not run scans.'
+                : 'Run a scan to generate a fresh snapshot and layers.'}
+            </div>
+            {configValidation.hasErrors && (
+              <div className="text-[11px] text-rose-600">Fix config errors before scanning.</div>
+            )}
+          </div>
+
+          <div className="flex-1">
+            <div className="grid gap-3 sm:grid-cols-5">
+              {scanSteps.map((step, index) => {
+                const isComplete = scanPhaseIndex > index;
+                const isActive = scanPhaseIndex === index && scanPhase !== 'idle';
+                const isFailed = scanPhase === 'failed' && index === scanSteps.length - 1;
+                const barClass = isFailed
+                  ? 'bg-rose-400'
+                  : isComplete
+                    ? 'bg-emerald-400'
+                    : isActive
+                      ? 'bg-amber-400'
+                      : 'bg-slate-200';
+                const labelClass = isActive || isComplete ? 'text-slate-600' : 'text-slate-400';
+
+                return (
+                  <div key={step.key} className="space-y-1">
+                    <div className={`h-2 rounded-full ${barClass}`} />
+                    <div className={`text-[10px] uppercase tracking-[0.2em] ${labelClass}`}>
+                      {step.label}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="mt-2 text-[11px] text-slate-500">{scanStatusText}</div>
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+
+  const mermaidView = (
+    <div className="flex h-full min-h-0 gap-4 overflow-hidden">
+      <aside
+        className="ar-panel relative flex h-full shrink-0 flex-col"
+        style={{ width: leftPanelWidth, minWidth: leftPanelMin, maxWidth: leftPanelMax }}
+      >
+        <div className="px-4 pt-4">
+          <p className="ar-panel-title">Mermaid Navigator</p>
+          <p className="text-xs text-slate-500">Project, snapshot, and layer access.</p>
+        </div>
+        <div className="px-4 pb-3 pt-3 space-y-3">
+          <div className="space-y-2">
+            <label className="ar-label">Project</label>
+            <select
+              className="ar-select"
+              value={selectedProjectId}
+              onChange={(event) => handleProjectChange(event.target.value)}
+              disabled={mermaidControlsDisabled}
+            >
+              {projects.length === 0 ? (
+                <option value="">No projects</option>
+              ) : (
+                projects.map((project) => (
+                  <option key={project.projectId} value={project.projectId}>
+                    {project.name}
+                  </option>
+                ))
+              )}
+            </select>
+          </div>
+
+          <div className="space-y-2">
+            <label className="ar-label">Snapshot</label>
+            <select
+              className="ar-select"
+              value={selectedSnapshotId}
+              onChange={(event) => handleSnapshotChange(event.target.value)}
+              disabled={mermaidControlsDisabled || !selectedProjectId}
+            >
+              {snapshots.length === 0 ? (
+                <option value="">No snapshots</option>
+              ) : (
+                snapshots.map((snapshot) => (
+                  <option key={snapshot.snapshotId} value={snapshot.snapshotId}>
+                    {snapshot.label ?? snapshot.snapshotId}
+                  </option>
+                ))
+              )}
+            </select>
+          </div>
+        </div>
+
+        {mermaidControlsDisabled ? (
+          <div className="px-4 pb-3">
+            <div className="ar-callout ar-callout-muted">
+              Switch to Local or Mock API to browse snapshots.
+            </div>
+          </div>
+        ) : snapshots.length === 0 ? (
+          <div className="px-4 pb-3">
+            <div className="ar-callout ar-callout-muted">
+              No snapshots yet. Run a scan in the Config tab.
+            </div>
+          </div>
+        ) : null}
+
+        <div className="px-4 pb-3">
+          <div className="flex flex-wrap gap-2">
+            <button className="ar-chip-button" onClick={handleGoBack} disabled={!canGoBack} type="button">
+              Back
+            </button>
+            <button
+              className="ar-chip-button"
+              onClick={handleGoForward}
+              disabled={!canGoForward}
+              type="button"
+            >
+              Forward
+            </button>
+            <button
+              className="ar-chip-button"
+              onClick={handleGoUp}
+              disabled={!selectedLayer || selectedLayer === 'L0'}
+              type="button"
+            >
+              Up
+            </button>
+            <button
+              className="ar-chip-button"
+              onClick={handleGoHome}
+              disabled={!layers.includes('L0')}
+              type="button"
+            >
+              Home (L0)
+            </button>
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-3 pb-4">
+          <div className="space-y-4">
+            {layerGroups.map((group) => (
+              <div key={group.key} className="space-y-2">
+                <div className="flex items-center justify-between text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                  <span>{group.title}</span>
+                  <span className="text-[10px] text-slate-400">{group.layers.length}</span>
+                </div>
+                {group.layers.length > 0 ? (
+                  group.layers.map((layer) => {
+                    const isActive = layer === selectedLayer;
+                    return (
+                      <button
+                        key={layer}
+                        className={`w-full rounded-xl border px-3 py-2 text-left text-[12px] font-semibold transition ${
+                          isActive
+                            ? 'border-amber-300 bg-amber-100 text-amber-900'
+                            : 'border-black/10 bg-white/70 text-slate-700 hover:bg-white'
+                        }`}
+                        onClick={() => updateLayer(layer, { record: true })}
+                        disabled={mermaidControlsDisabled}
+                        type="button"
+                        title={layer}
+                      >
+                        <span className="block truncate">{formatLayerLabel(layer)}</span>
+                      </button>
+                    );
+                  })
+                ) : (
+                  <div className="rounded-xl border border-dashed border-black/10 px-3 py-2 text-[11px] text-slate-400">
+                    No {group.key} layers.
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div
+          className="ar-resize-handle"
+          onPointerDown={handleResizeStart}
+          onPointerMove={handleResizeMove}
+          onPointerUp={handleResizeEnd}
+          onPointerCancel={handleResizeEnd}
+        />
+      </aside>
+
+      <main className="relative flex min-w-0 flex-1 flex-col">
+        <div className="relative flex min-h-0 flex-1">
+          <MermaidPreview
+            code={code}
+            themeKey={themeKey}
+            backgroundKey={backgroundKey}
+            fontKey={fontKey}
+            renderOptions={renderOptions}
+            selectedNodeIds={selectedMermaidNodes}
+            selectedEdge={selectedMermaidEdge}
+            emptyState={emptyState}
+            onError={setRenderError}
+            onCanvasClick={() => clearSelection(true)}
+            onHoverChange={setHoveredMermaid}
+            onNodeEvent={(event) => {
+              if (event.kind === 'node') {
+                const mermaidId = event.mermaidId;
+                if (!mermaidId) return;
+
+                if (selectedLayer === 'L0') {
+                  const featureKey = featureIndex.mermaidIdToFeature.get(mermaidId);
+                  if (featureKey) {
+                    selectFeature(featureKey);
+                  }
+                  if (event.action === 'doubleClick' && featureKey) {
+                    const nextLayer = `L1:${featureKey}`;
+                    if (layers.includes(nextLayer)) {
+                      updateLayer(nextLayer, { record: true, parentLayer: 'L0' });
+                    }
+                  }
+                  return;
+                }
+
+                const node = nodeIndex.mermaidIdToNode.get(mermaidId);
+                if (!node) return;
+                selectNode(node.id);
+
+                if (event.action === 'doubleClick') {
+                  const targetLayer = l2LayerMap.get(node.id);
+                  if (targetLayer && layers.includes(targetLayer)) {
+                    updateLayer(targetLayer, { record: true, parentLayer: selectedLayer || 'L0' });
+                  }
+                }
+              }
+
+              if (event.kind === 'edge') {
+                const fromMermaidId = event.fromMermaidId ?? null;
+                const toMermaidId = event.toMermaidId ?? null;
+                const fromNodeId =
+                  fromMermaidId ? nodeIndex.mermaidIdToNode.get(fromMermaidId)?.id ?? null : null;
+                const toNodeId =
+                  toMermaidId ? nodeIndex.mermaidIdToNode.get(toMermaidId)?.id ?? null : null;
+                const edge = findEdge(audit, fromNodeId, toNodeId, event.label);
+                if (!edge) return;
+                selectEdge(buildEdgeKey(edge));
+              }
+            }}
+          />
+
+          <div className="pointer-events-none absolute right-6 top-6 z-20 text-[11px] text-slate-600">
+            <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+              Hover
+            </div>
+            <div className="text-sm font-semibold text-slate-800">{hoverText}</div>
+            {hoverDisplay?.meta && <div className="text-[10px] text-slate-400">{hoverDisplay.meta}</div>}
+            <div className="mt-3 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+              Selected
+            </div>
+            <div className="text-sm font-semibold text-slate-800">{selectedText}</div>
+            {selectedDisplay?.meta && (
+              <div className="text-[10px] text-slate-400">{selectedDisplay.meta}</div>
+            )}
+          </div>
+        </div>
+      </main>
+    </div>
+  );
+
   return (
-    <div className="ar-workbench min-h-screen text-slate-900">
-      <div className="flex min-h-screen flex-col">
+    <div className="ar-workbench h-screen overflow-hidden text-slate-900">
+      <div className="flex h-screen flex-col overflow-hidden">
         <header className="flex flex-wrap items-center justify-between gap-4 px-6 py-5">
           <div className="flex items-center gap-4">
             <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-200 text-lg font-semibold text-amber-900 shadow-sm">
@@ -764,372 +1299,33 @@ const App = () => {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <button className="ar-button" onClick={handleExport}>
-              Export SVG
-            </button>
+            {activeTab === 'mermaid' && (
+              <button className="ar-button" onClick={handleExport} type="button">
+                Export SVG
+              </button>
+            )}
           </div>
         </header>
 
-        <div className="flex flex-1 flex-col gap-4 overflow-hidden px-6 pb-6 lg:flex-row">
-          <aside
-            className={`ar-panel flex h-full w-full flex-col transition-all lg:w-[320px] ${
-              leftCollapsed ? 'lg:w-[72px]' : ''
-            }`}
+        <div className="flex flex-wrap items-center gap-2 px-6 pb-3">
+          <button
+            className={`ar-tab ${activeTab === 'config' ? 'ar-tab-active' : ''}`}
+            onClick={() => setActiveTab('config')}
+            type="button"
           >
-            <div className="flex items-center justify-between px-4 pt-4">
-              <div>
-                <p className="ar-panel-title">Workspace</p>
-                <p className="text-xs text-slate-500">Data, config, and scan controls</p>
-              </div>
-              <button
-                className="ar-icon-button"
-                onClick={() => setLeftCollapsed((value) => !value)}
-                type="button"
-                aria-label={leftCollapsed ? 'Expand left sidebar' : 'Collapse left sidebar'}
-              >
-                {leftCollapsed ? '>' : '<'}
-              </button>
-            </div>
-            <div
-              className={`flex-1 overflow-y-auto px-4 pb-4 pt-4 transition-all ${
-                leftCollapsed ? 'lg:pointer-events-none lg:opacity-0 lg:translate-x-2' : ''
-              }`}
-            >
-              <div className="space-y-4">
-                <div className="ar-card">
-                  <SnapshotPanel
-                    source={source}
-                    onSourceChange={(value) => {
-                      setSource(value);
-                      clearHistory();
-                      setLayerParents({});
-                    }}
-                    projects={projects}
-                    snapshots={snapshots}
-                    layers={layers}
-                    selectedProjectId={selectedProjectId}
-                    selectedSnapshotId={selectedSnapshotId}
-                    selectedLayer={selectedLayer}
-                    onProjectChange={handleProjectChange}
-                    onSnapshotChange={handleSnapshotChange}
-                    onLayerChange={handleLayerChange}
-                    apiAvailable={apiAvailable}
-                    apiVersion={apiVersion}
-                  />
-                </div>
-
-                <div className="ar-card">
-                  <h3 className="ar-panel-title">Appearance</h3>
-                  <p className="mb-3 text-xs text-slate-500">
-                    Tune the canvas style without touching diagram data.
-                  </p>
-                  <ThemePicker
-                    themeKey={themeKey}
-                    backgroundKey={backgroundKey}
-                    fontKey={fontKey}
-                    onThemeChange={setThemeKey}
-                    onBackgroundChange={setBackgroundKey}
-                    onFontChange={setFontKey}
-                  />
-                </div>
-
-                <ConfigPanel
-                  profile={profile}
-                  config={config}
-                  configPath={configPath}
-                  disabled={source === 'demo' || (source === 'local' && !apiAvailable)}
-                  busy={configBusy}
-                  onProfileChange={(next) => setProfile(next)}
-                  onConfigChange={(next) => setConfig(next)}
-                  onSave={handleSaveConfig}
-                  onReload={handleReloadConfig}
-                  onScan={handleScan}
-                />
-
-                {source === 'demo' && (
-                  <div className="ar-card">
-                    <label className="ar-panel-title">Demo Mermaid (editable)</label>
-                    <textarea
-                      className="ar-textarea mt-2 h-40"
-                      value={localCode}
-                      onChange={(event) => {
-                        const value = event.target.value;
-                        setLocalCode(value);
-                        setCode(value);
-                      }}
-                    />
-                  </div>
-                )}
-              </div>
-            </div>
-          </aside>
-
-          <main className="flex min-h-0 min-w-0 flex-1 flex-col gap-4">
-            <div className="ar-panel flex flex-wrap items-center gap-3 px-4 py-3">
-              <div className="flex items-center gap-2">
-                <button
-                  className="ar-chip-button"
-                  onClick={handleGoBack}
-                  disabled={!canGoBack}
-                  type="button"
-                >
-                  Back
-                </button>
-                <button
-                  className="ar-chip-button"
-                  onClick={handleGoForward}
-                  disabled={!canGoForward}
-                  type="button"
-                >
-                  Forward
-                </button>
-                <div className="h-6 w-px bg-black/10" />
-                <button
-                  className="ar-chip-button"
-                  onClick={handleGoUp}
-                  disabled={!selectedLayer || selectedLayer === 'L0'}
-                  type="button"
-                >
-                  Up
-                </button>
-                <button
-                  className="ar-chip-button"
-                  onClick={handleGoHome}
-                  disabled={!layers.includes('L0')}
-                  type="button"
-                >
-                  Home (L0)
-                </button>
-              </div>
-
-              <div className="flex flex-1 flex-wrap items-center gap-2 text-xs text-slate-600">
-                <span className="rounded-full border border-black/10 bg-white/70 px-2 py-1">
-                  Project: {selectedProjectName ?? 'None'}
-                </span>
-                <span className="rounded-full border border-black/10 bg-white/70 px-2 py-1">
-                  Snapshot: {selectedSnapshotLabel || 'None'}
-                </span>
-                {layerChain.map((layer) => (
-                  <button
-                    key={layer}
-                    className="ar-chip-button"
-                    onClick={() => updateLayer(layer, { record: true })}
-                    type="button"
-                  >
-                    {layer}
-                  </button>
-                ))}
-              </div>
-
-              {(selectedNodeId || selectedFeatureKey || selectedEdgeKey) && (
-                <button className="ar-chip-button" onClick={() => clearSelection(true)} type="button">
-                  Clear Selection
-                </button>
-              )}
-            </div>
-
-            <div className="min-h-[360px] flex-1">
-              <MermaidPreview
-                code={code}
-                themeKey={themeKey}
-                backgroundKey={backgroundKey}
-                fontKey={fontKey}
-                renderOptions={renderOptions}
-                selectedNodeIds={selectedMermaidNodes}
-                selectedEdge={selectedMermaidEdge}
-                emptyState={emptyState}
-                onError={setRenderError}
-                onCanvasClick={() => clearSelection(true)}
-                onNodeEvent={(event) => {
-                  if (event.kind === 'node') {
-                    const mermaidId = event.mermaidId;
-                    if (!mermaidId) return;
-
-                    if (selectedLayer === 'L0') {
-                      const featureKey = featureIndex.mermaidIdToFeature.get(mermaidId);
-                      if (featureKey) {
-                        selectFeature(featureKey);
-                      }
-                      if (event.action === 'doubleClick' && featureKey) {
-                        const nextLayer = `L1:${featureKey}`;
-                        if (layers.includes(nextLayer)) {
-                          updateLayer(nextLayer, { record: true, parentLayer: 'L0' });
-                        }
-                      }
-                      return;
-                    }
-
-                    const node = nodeIndex.mermaidIdToNode.get(mermaidId);
-                    if (!node) return;
-                    selectNode(node.id);
-
-                    if (event.action === 'doubleClick') {
-                      const targetLayer = l2LayerMap.get(node.id);
-                      if (targetLayer && layers.includes(targetLayer)) {
-                        updateLayer(targetLayer, { record: true, parentLayer: selectedLayer || 'L0' });
-                      }
-                    }
-                  }
-
-                  if (event.kind === 'edge') {
-                    const fromMermaidId = event.fromMermaidId ?? null;
-                    const toMermaidId = event.toMermaidId ?? null;
-                    const fromNodeId =
-                      fromMermaidId ? nodeIndex.mermaidIdToNode.get(fromMermaidId)?.id ?? null : null;
-                    const toNodeId =
-                      toMermaidId ? nodeIndex.mermaidIdToNode.get(toMermaidId)?.id ?? null : null;
-                    const edge = findEdge(audit, fromNodeId, toNodeId, event.label);
-                    if (!edge) return;
-                    selectEdge(buildEdgeKey(edge));
-                  }
-                }}
-              />
-            </div>
-          </main>
-
-          <aside
-            className={`ar-panel flex h-full w-full flex-col transition-all lg:w-[300px] ${
-              rightCollapsed ? 'lg:w-[72px]' : ''
-            }`}
+            Config & Scan
+          </button>
+          <button
+            className={`ar-tab ${activeTab === 'mermaid' ? 'ar-tab-active' : ''}`}
+            onClick={() => setActiveTab('mermaid')}
+            type="button"
           >
-            <div className="flex items-center justify-between px-4 pt-4">
-              <div>
-                <p className="ar-panel-title">Inspector</p>
-                <p className="text-xs text-slate-500">Selection details and context</p>
-              </div>
-              <button
-                className="ar-icon-button"
-                onClick={() => setRightCollapsed((value) => !value)}
-                type="button"
-                aria-label={rightCollapsed ? 'Expand right sidebar' : 'Collapse right sidebar'}
-              >
-                {rightCollapsed ? '<' : '>'}
-              </button>
-            </div>
-            <div
-              className={`flex-1 overflow-y-auto px-4 pb-4 pt-4 transition-all ${
-                rightCollapsed ? 'lg:pointer-events-none lg:opacity-0 lg:-translate-x-2' : ''
-              }`}
-            >
-              <div className="space-y-4">
-                {selectedFeatureKey && (
-                  <div className="ar-card">
-                    <div className="ar-panel-title">Feature</div>
-                    <div className="mt-2 truncate text-sm font-semibold text-slate-800" title={selectedFeatureKey}>
-                      {selectedFeatureKey}
-                    </div>
-                    <div className="mt-3 flex justify-between text-[11px] text-slate-600">
-                      <span>Nodes</span>
-                      <span>{featureIndex.statsByFeature.get(selectedFeatureKey)?.nodeCount ?? 0}</span>
-                    </div>
-                    <div className="flex justify-between text-[11px] text-slate-600">
-                      <span>Edges</span>
-                      <span>{featureIndex.statsByFeature.get(selectedFeatureKey)?.edgeCount ?? 0}</span>
-                    </div>
-                  </div>
-                )}
+            Mermaid
+          </button>
+        </div>
 
-                {selectedNode && (
-                  <div className="ar-card">
-                    <div className="ar-panel-title">Node</div>
-                    <div
-                      className="mt-2 truncate text-sm font-semibold text-slate-800"
-                      title={selectedNode.nameDisplay}
-                    >
-                      {selectedNode.nameDisplay}
-                    </div>
-                    <div className="mt-2 text-[11px] text-slate-600">
-                      Kind: {selectedNode.kind}
-                    </div>
-                    <div className="text-[11px] text-slate-600">
-                      Feature: {selectedNode.featureKey}
-                    </div>
-                    {selectedNode.source && (
-                      <div
-                        className="mt-2 truncate text-[11px] text-slate-500"
-                        title={`${selectedNode.source.file}:${selectedNode.source.startLine}:${selectedNode.source.startCol}`}
-                      >
-                        {selectedNode.source.file}:{selectedNode.source.startLine}:{selectedNode.source.startCol}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {selectedEdge && (
-                  <div className="ar-card">
-                    <div className="ar-panel-title">Edge</div>
-                    <div className="mt-2 text-[11px] text-slate-600">
-                      Kind: {selectedEdge.edgeKind}
-                    </div>
-                    <div className="truncate text-[11px] text-slate-600" title={selectedEdge.fromId}>
-                      From: {selectedEdge.fromId}
-                    </div>
-                    <div className="truncate text-[11px] text-slate-600" title={selectedEdge.toId}>
-                      To: {selectedEdge.toId}
-                    </div>
-                    <div className="text-[11px] text-slate-600">
-                      CallSites: {selectedEdge.callSites.length}
-                    </div>
-                    {selectedEdge.callSites.length > 0 && (
-                      <div className="mt-3 space-y-2">
-                        {selectedEdge.callSites.map((site, index) => (
-                          <button
-                            key={`${site.file}-${site.line}-${site.col}-${index}`}
-                            className="ar-mini-button w-full text-left"
-                            onClick={() => {
-                              const client = source === 'mock' ? mockApi : api;
-                              client
-                                .openInEditor(site.file, site.line, site.col)
-                                .then((result) => {
-                                  if (!result.ok) {
-                                    setApiMessage(result.message ?? 'Failed to open file.');
-                                  }
-                                })
-                                .catch(() => setApiMessage('Failed to open file.'));
-                            }}
-                          >
-                            <span className="block truncate" title={`${site.file}:${site.line}:${site.col}`}>
-                              {site.file}:{site.line}:{site.col}
-                            </span>
-                            {site.snippet ? (
-                              <span className="mt-1 block truncate text-[10px] text-slate-500" title={site.snippet}>
-                                {site.snippet}
-                              </span>
-                            ) : null}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {selectedNodeEdges.length > 0 && !selectedEdge && (
-                  <div className="ar-card">
-                    <div className="ar-panel-title">Related Edges</div>
-                    <div className="mt-2 space-y-2">
-                      {selectedNodeEdges.map((edge, index) => (
-                        <button
-                          key={`${edge.fromId}-${edge.toId}-${edge.edgeKind}-${index}`}
-                          className="ar-mini-button w-full text-left"
-                          onClick={() => selectEdge(buildEdgeKey(edge))}
-                        >
-                          <span className="block truncate" title={`${edge.edgeKind}: ${edge.fromId} -> ${edge.toId}`}>
-                            {edge.edgeKind}: {edge.fromId} {'->'} {edge.toId}
-                          </span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {!selectedFeatureKey && !selectedNode && !selectedEdge && (
-                  <div className="ar-card-muted">
-                    Select a node or edge to inspect details.
-                  </div>
-                )}
-              </div>
-            </div>
-          </aside>
+        <div className="flex-1 overflow-hidden px-6 pb-6">
+          {activeTab === 'config' ? configView : mermaidView}
         </div>
       </div>
 

@@ -30,9 +30,23 @@ interface MermaidPreviewProps {
   onError?: (message: string) => void;
   onNodeEvent?: (event: MermaidNodeEvent) => void;
   onCanvasClick?: () => void;
+  onHoverChange?: (info: { ids: string[]; label?: string } | null) => void;
 }
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
+
+const isEditableTarget = (target: EventTarget | null) => {
+  if (!(target instanceof HTMLElement)) return false;
+  const tag = target.tagName.toLowerCase();
+  return (
+    tag === 'input' ||
+    tag === 'textarea' ||
+    tag === 'select' ||
+    tag === 'button' ||
+    tag === 'a' ||
+    target.isContentEditable
+  );
+};
 
 const resolveMermaidTarget = (target: HTMLElement | null) => {
   if (!target) return null;
@@ -84,6 +98,7 @@ const MermaidPreview = ({
   onError,
   onNodeEvent,
   onCanvasClick,
+  onHoverChange,
 }: MermaidPreviewProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
@@ -99,11 +114,13 @@ const MermaidPreview = ({
   const dragDetectedRef = useRef(false);
   const hoverKeyRef = useRef('');
   const autoFitRef = useRef(true);
+  const spacePressedRef = useRef(false);
 
   const [svgMarkup, setSvgMarkup] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isRendering, setIsRendering] = useState(false);
   const [isPanning, setIsPanning] = useState(false);
+  const [spacePanning, setSpacePanning] = useState(false);
   const [view, setView] = useState({ scale: 1, x: 0, y: 0 });
   const [hovered, setHovered] = useState<{ ids: string[]; label?: string } | null>(null);
 
@@ -132,6 +149,43 @@ const MermaidPreview = ({
   useEffect(() => {
     viewRef.current = view;
   }, [view]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.code !== 'Space') return;
+      if (isEditableTarget(event.target)) return;
+      if (!spacePressedRef.current) {
+        spacePressedRef.current = true;
+        setSpacePanning(true);
+      }
+      event.preventDefault();
+    };
+
+    const handleKeyUp = (event: KeyboardEvent) => {
+      if (event.code !== 'Space') return;
+      spacePressedRef.current = false;
+      setSpacePanning(false);
+    };
+
+    const handleBlur = () => {
+      spacePressedRef.current = false;
+      setSpacePanning(false);
+    };
+
+    window.addEventListener('keydown', handleKeyDown, { passive: false });
+    window.addEventListener('keyup', handleKeyUp);
+    window.addEventListener('blur', handleBlur);
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+      window.removeEventListener('blur', handleBlur);
+    };
+  }, []);
+
+  useEffect(() => {
+    onHoverChange?.(hovered);
+  }, [hovered, onHoverChange]);
 
   useEffect(() => {
     autoFitRef.current = true;
@@ -277,6 +331,16 @@ const MermaidPreview = ({
     setHovered(resolved);
   };
 
+  const flashMermaidElement = (target: HTMLElement | null) => {
+    if (!target) return;
+    const hit = target.closest<SVGGElement>('g.node, g.edgePath, g.edgeLabel');
+    if (!hit) return;
+    hit.classList.remove('archradar-clicked');
+    void hit.getBoundingClientRect();
+    hit.classList.add('archradar-clicked');
+    window.setTimeout(() => hit.classList.remove('archradar-clicked'), 260);
+  };
+
   const updateView = (next: { scale: number; x: number; y: number }) => {
     viewRef.current = next;
     setView(next);
@@ -340,10 +404,11 @@ const MermaidPreview = ({
   };
 
   const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
-    if (event.button !== 0) return;
-    const target = event.target as HTMLElement | null;
-    if (resolveMermaidTarget(target)) return;
     dragDetectedRef.current = false;
+    const isMiddleButton = event.button === 1;
+    const isSpaceDrag = event.button === 0 && spacePressedRef.current;
+    if (!isMiddleButton && !isSpaceDrag) return;
+    dragDetectedRef.current = true;
     panStateRef.current = {
       active: true,
       startX: event.clientX,
@@ -352,6 +417,7 @@ const MermaidPreview = ({
       originY: viewRef.current.y,
     };
     setIsPanning(true);
+    event.preventDefault();
     event.currentTarget.setPointerCapture(event.pointerId);
   };
 
@@ -398,6 +464,7 @@ const MermaidPreview = ({
     }
     const target = event.target as HTMLElement | null;
     const resolved = resolveMermaidTarget(target);
+    flashMermaidElement(target);
     if (!resolved) {
       onCanvasClick?.();
       return;
@@ -430,6 +497,7 @@ const MermaidPreview = ({
     }
     const target = event.target as HTMLElement | null;
     const resolved = resolveMermaidTarget(target);
+    flashMermaidElement(target);
     if (!resolved) {
       handleReset();
       return;
@@ -478,7 +546,7 @@ const MermaidPreview = ({
 
       <div
         className={`mermaid-surface relative flex h-full w-full items-stretch justify-stretch ${actualBgClass} ${
-          isPanning ? 'cursor-grabbing' : 'cursor-grab'
+          isPanning ? 'cursor-grabbing' : spacePanning ? 'cursor-grab' : 'cursor-default'
         }`}
         style={actualBgStyle}
         ref={containerRef}
@@ -523,13 +591,8 @@ const MermaidPreview = ({
             {error}
           </div>
         )}
-        {hovered?.label && (
-          <div className="absolute bottom-4 left-4 max-w-xs rounded-full border border-black/10 bg-white/80 px-3 py-1 text-[11px] text-slate-700 shadow-sm">
-            {hovered.label}
-          </div>
-        )}
         <div className="pointer-events-none absolute bottom-4 right-4 rounded-full border border-black/10 bg-white/70 px-3 py-1 text-[11px] text-slate-500">
-          Scroll to zoom - Drag background to pan
+          Scroll to zoom - Middle mouse or Space + drag to pan
         </div>
       </div>
     </section>
