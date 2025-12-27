@@ -1,9 +1,9 @@
 # 本地运行与排障（Runbook）
 
 - TL;DR
-- 推荐直接运行 `start-archradar.bat`，会自动启动后端、注册项目、触发一次扫描并启动前端（`start-archradar.bat`）。
+- 推荐直接运行 `start-archradar.bat`，会自动启动后端、注册项目并启动前端（`start-archradar.bat`）。扫描需在前端手动触发。
 - 后端默认监听 `http://localhost:5157`（`ArchRadar.Api/Properties/launchSettings.json`），前端 dev server 固定 `5173`（`frontend-ui/vite.config.ts`）。
-- 配置文件必须存在：`.archradar/config.json` 或 `archradar.config.json`（`ArchRadar.Api/Services/ScanService.cs`、`ArchRadar.Cli/Program.cs`）。
+- 配置文件可选：未提供时会在项目下自动生成 `.archradar/config.json`（`ArchRadar.Api/Services/ProjectConfigService.cs`）。
 - 前端通过 `VITE_API_BASE` 或 Vite proxy 访问后端（`frontend-ui/src/services/api.ts`、`frontend-ui/vite.config.ts`）。
 
 ## 1) 一键启动（推荐）
@@ -15,7 +15,6 @@
 - 启动后端：`dotnet run --project ArchRadar.Api`
 - 健康检查 `/api/health`
 - 注册项目 `/api/projects`
-- 触发一次扫描 `/api/projects/{id}/scan`
 - 启动前端：`pnpm dev`（注入 `VITE_API_BASE=http://localhost:5157`）
 - 打开浏览器并做 proxy health check
 

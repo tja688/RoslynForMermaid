@@ -32,16 +32,18 @@ if errorlevel 1 (
   exit /b 1
 )
 
-set CONFIG_PATH=%ROOT%\.archradar\config.json
-if not exist "%CONFIG_PATH%" (
+set CONFIG_PATH=
+if exist "%ROOT%\.archradar\config.json" (
+  set CONFIG_PATH=%ROOT%\.archradar\config.json
+)
+if not defined CONFIG_PATH if exist "%ROOT%\archradar.config.json" (
   set CONFIG_PATH=%ROOT%\archradar.config.json
 )
-if not exist "%CONFIG_PATH%" (
-  call :log "ERROR config not found"
-  echo Config not found. Expected .archradar\config.json or archradar.config.json
-  exit /b 1
+if defined CONFIG_PATH (
+  call :log "CONFIG_PATH=%CONFIG_PATH%"
+) else (
+  call :log "CONFIG_PATH=auto (will generate)"
 )
-call :log "CONFIG_PATH=%CONFIG_PATH%"
 
 if exist "%ROOT%\frontend-ui\.env.local" (
   for /f "tokens=1,2 delims==" %%a in ('findstr /i "^VITE_API_BASE=" "%ROOT%\frontend-ui\.env.local"') do set ENV_BASE=%%b
@@ -82,7 +84,9 @@ call :log "OK backend health"
 
 call :log "STEP register project"
 powershell -NoProfile -Command ^
-  "$body=@{ projectId='archradar-local'; name='ArchRadar Local'; projectRoot='%ROOT%'; configPath='%CONFIG_PATH%' } | ConvertTo-Json;" ^
+  "$body=@{ projectId='archradar-local'; name='ArchRadar Local'; projectRoot='%ROOT%' };" ^
+  "if('%CONFIG_PATH%' -ne ''){ $body.configPath='%CONFIG_PATH%' };" ^
+  "$body | ConvertTo-Json;" ^
   "Invoke-RestMethod -Method Post -Uri '%API_URL%/api/projects' -ContentType 'application/json' -Body $body | Out-Null"
 if errorlevel 1 (
   call :log "ERROR register project failed"
@@ -90,16 +94,7 @@ if errorlevel 1 (
   exit /b 1
 )
 call :log "OK register project"
-
-call :log "STEP scan"
-powershell -NoProfile -Command ^
-  "Invoke-RestMethod -Method Post -Uri '%API_URL%/api/projects/archradar-local/scan' -ContentType 'application/json' -Body '{}' | Out-Null"
-if errorlevel 1 (
-  call :log "ERROR scan failed"
-  echo Scan failed. Check backend logs.
-  exit /b 1
-)
-call :log "OK scan"
+call :log "INFO scan is manual; use Start Scan in the UI"
 
 call :log "STEP start frontend"
 if not exist "%ROOT%\frontend-ui\node_modules" (

@@ -24,10 +24,10 @@ const ThemePicker = ({
 }: ThemePickerProps) => {
   return (
     <div className="flex flex-wrap items-end gap-4">
-      <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
-        Theme
+      <label className="flex flex-col gap-2 text-xs text-slate-600">
+        <span className="ar-label">Theme</span>
         <select
-          className="w-44 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-800 shadow-sm"
+          className="ar-select w-44"
           value={themeKey}
           onChange={(event) => onThemeChange(event.target.value as ThemeType)}
         >
@@ -39,10 +39,10 @@ const ThemePicker = ({
         </select>
       </label>
 
-      <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
-        Background
+      <label className="flex flex-col gap-2 text-xs text-slate-600">
+        <span className="ar-label">Background</span>
         <select
-          className="w-44 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-800 shadow-sm"
+          className="ar-select w-44"
           value={backgroundKey}
           onChange={(event) => onBackgroundChange(event.target.value)}
         >
@@ -54,10 +54,10 @@ const ThemePicker = ({
         </select>
       </label>
 
-      <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
-        Font
+      <label className="flex flex-col gap-2 text-xs text-slate-600">
+        <span className="ar-label">Font</span>
         <select
-          className="w-44 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-800 shadow-sm"
+          className="ar-select w-44"
           value={fontKey}
           onChange={(event) => onFontChange(event.target.value)}
         >

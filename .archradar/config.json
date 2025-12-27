@@ -4,8 +4,8 @@
   "legacyL2Detected": true,
   "scan": {
     "notes": "mode \u53EF\u9009\uFF1ADirectoryOnly / MsBuildSolution\u3002MsBuildSolution \u9700\u8981 solutionPath\u3002",
-    "mode": "DirectoryOnly",
-    "solutionPath": "",
+    "mode": "MsBuildSolution",
+    "solutionPath": "C:\\Users\\jinji\\Documents\\GitHub\\ThatGameJam\\ThatGameJam.sln",
     "excludeGlobs": [
       "**/bin/**",
       "**/obj/**",

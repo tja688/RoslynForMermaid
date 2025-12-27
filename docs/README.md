@@ -27,7 +27,7 @@ ArchRadar 是一个面向 C# 项目的架构扫描与可视化工具：扫描目
   - `src/components/`：面板与 Mermaid 预览
 - `.archradar/`
   - `config.json`：本仓库扫描规则示例
-- `start-archradar.bat`：一键启动脚本（后端 + 前端 + 自动注册/扫描）
+- `start-archradar.bat`：一键启动脚本（后端 + 前端 + 自动注册，扫描需手动触发）
 - `logs/`：启动脚本日志输出目录
 
 ## 主要入口
@@ -43,7 +43,7 @@ ArchRadar 是一个面向 C# 项目的架构扫描与可视化工具：扫描目
   - `projects/{projectId}/snapshots/{snapshotId}/index.json` + `audit.json` + `L0/L1/L2.mmd`（`ArchRadar.Api/Services/WorkspacePaths.cs`）。
 
 ## 快速开始
-- 优先使用 `start-archradar.bat` 自动启动后端/前端与扫描流程（脚本内容见 `start-archradar.bat`）。
+- 优先使用 `start-archradar.bat` 自动启动后端/前端（脚本内容见 `start-archradar.bat`，扫描需在 UI 手动触发）。
 - 手动启动与常见问题见 `docs/RUNBOOK.md`。
 
 ## 关键文档
@@ -52,3 +52,4 @@ ArchRadar 是一个面向 C# 项目的架构扫描与可视化工具：扫描目
 - `docs/CONVENTIONS.md`：目录/命名/API/错误处理约定
 - `docs/MAP.md`：代码地图（去哪改）
 - `docs/TODO_NEXT.md`：最安全的下一步开发路径
+- `docs/WORKBENCH_UX.md`：工作台 UX 更新说明

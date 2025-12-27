@@ -32,13 +32,14 @@ const SnapshotPanel = ({
   apiVersion,
 }: SnapshotPanelProps) => {
   const controlsDisabled = source === 'demo' || (source === 'local' && !apiAvailable);
+  const showSnapshotHint = !controlsDisabled && snapshots.length === 0;
 
   return (
     <div className="space-y-4">
-      <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
-        Data Source
+      <div className="space-y-2">
+        <label className="ar-label">Data Source</label>
         <select
-          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-800 shadow-sm"
+          className="ar-select"
           value={source}
           onChange={(event) => onSourceChange(event.target.value as DataSource)}
         >
@@ -46,20 +47,21 @@ const SnapshotPanel = ({
           <option value="local">Local API</option>
           <option value="mock">Mock API</option>
         </select>
-      </label>
+        <p className="ar-help">Switch between demo, live API, and mock data.</p>
+      </div>
 
-      <div className="rounded-xl border border-slate-200 bg-white/80 px-3 py-2 text-xs text-slate-600">
+      <div className={`ar-callout ${apiAvailable ? 'ar-callout-ok' : 'ar-callout-warn'}`}>
         {apiAvailable ? (
-          <span>API health ok{apiVersion ? ` (${apiVersion})` : ''}.</span>
+          <span>API healthy{apiVersion ? ` (${apiVersion})` : ''}.</span>
         ) : (
           <span>API offline. Demo mode is recommended.</span>
         )}
       </div>
 
-      <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
-        Project
+      <div className="space-y-2">
+        <label className="ar-label">Project</label>
         <select
-          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-800 shadow-sm disabled:bg-slate-100"
+          className="ar-select"
           value={selectedProjectId}
           onChange={(event) => onProjectChange(event.target.value)}
           disabled={controlsDisabled}
@@ -74,12 +76,13 @@ const SnapshotPanel = ({
             ))
           )}
         </select>
-      </label>
+        <p className="ar-help">Select a registered project workspace.</p>
+      </div>
 
-      <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
-        Snapshot
+      <div className="space-y-2">
+        <label className="ar-label">Snapshot</label>
         <select
-          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-800 shadow-sm disabled:bg-slate-100"
+          className="ar-select"
           value={selectedSnapshotId}
           onChange={(event) => onSnapshotChange(event.target.value)}
           disabled={controlsDisabled}
@@ -94,12 +97,13 @@ const SnapshotPanel = ({
             ))
           )}
         </select>
-      </label>
+        <p className="ar-help">Pick a scan result to browse.</p>
+      </div>
 
-      <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
-        Layer
+      <div className="space-y-2">
+        <label className="ar-label">Layer</label>
         <select
-          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-800 shadow-sm disabled:bg-slate-100"
+          className="ar-select"
           value={selectedLayer}
           onChange={(event) => onLayerChange(event.target.value)}
           disabled={controlsDisabled}
@@ -114,7 +118,14 @@ const SnapshotPanel = ({
             ))
           )}
         </select>
-      </label>
+        <p className="ar-help">L0 for overview, L1/L2 for drilldowns.</p>
+      </div>
+
+      {showSnapshotHint && (
+        <div className="ar-callout ar-callout-muted">
+          No snapshots yet. Run a scan to populate layers.
+        </div>
+      )}
     </div>
   );
 };

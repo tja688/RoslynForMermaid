@@ -31,8 +31,8 @@ const ConfigPanel = ({
 }: ConfigPanelProps) => {
   if (!profile || !config) {
     return (
-      <div className="rounded-2xl border border-slate-200 bg-white/80 p-4 shadow-sm">
-        <div className="text-xs text-slate-500">Select a project to edit scan config.</div>
+      <div className="ar-card-muted">
+        Select a project to edit scan config.
       </div>
     );
   }
@@ -74,45 +74,117 @@ const ConfigPanel = ({
     });
   };
 
+  const updateL2 = (next: Partial<ArchRadarConfig['l2']>) => {
+    onConfigChange({ ...config, l2: { ...config.l2, ...next } });
+  };
+
+  const issues: { level: 'error' | 'warn'; message: string }[] = [];
+  const ruleErrors = new Set<number>();
+  const groupErrors = new Set<number>();
+
+  if (!config.featureRules.fallbackFeatureKey?.trim()) {
+    issues.push({ level: 'error', message: 'Fallback feature key is required.' });
+  }
+
+  config.featureRules.rules.forEach((rule, index) => {
+    if (!rule.pattern.trim()) {
+      ruleErrors.add(index);
+      issues.push({ level: 'error', message: `Feature rule ${index + 1} needs a pattern.` });
+    }
+  });
+
+  if (config.externalFolding.enabled) {
+    config.externalFolding.groups.forEach((group, index) => {
+      if (!group.name.trim()) {
+        groupErrors.add(index);
+        issues.push({ level: 'error', message: `External group ${index + 1} needs a name.` });
+      }
+    });
+  }
+
+  if (config.l2.enabled && config.l2.maxDepth <= 0) {
+    issues.push({ level: 'error', message: 'L2 max depth must be greater than 0.' });
+  }
+
+  if (config.scan.mode === 'MsBuildSolution' && !config.scan.solutionPath) {
+    issues.push({ level: 'warn', message: 'Solution path empty; .sln will be auto-detected.' });
+  }
+
+  if (
+    config.scan.mode === 'MsBuildSolution' &&
+    config.scan.solutionPath &&
+    !config.scan.solutionPath.toLowerCase().endsWith('.sln')
+  ) {
+    issues.push({ level: 'warn', message: 'Solution path should point to a .sln file.' });
+  }
+
+  const hasErrors = issues.some((issue) => issue.level === 'error');
+  const actionDisabled = disabled || busy || hasErrors;
+
   return (
     <div className="space-y-4">
-      <div className="rounded-2xl border border-slate-200 bg-white/80 p-4 shadow-sm">
-        <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-          Project Settings
-        </h2>
-        <div className="mt-3 space-y-3 text-xs text-slate-700">
-          <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
-            Project Root
-            <input
-              className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700"
-              value={profile.projectRoot}
-              readOnly
-            />
-          </label>
-          <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
-            Scan Root (optional)
-            <input
-              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800"
-              value={profile.scanRoot ?? ''}
-              disabled={disabled}
-              onChange={(event) =>
-                onProfileChange({ ...profile, scanRoot: normalizePath(event.target.value) })
-              }
-            />
-          </label>
-          <div className="text-[11px] text-slate-500">Config: {configPath}</div>
+      {issues.length > 0 && (
+        <div className={`ar-callout ${hasErrors ? 'ar-callout-error' : 'ar-callout-warn'}`}>
+          <div className="text-xs font-semibold">
+            {hasErrors ? 'Fix issues before saving.' : 'Review warnings before scanning.'}
+          </div>
+          <ul className="mt-2 space-y-1 text-[11px]">
+            {issues.map((issue, index) => (
+              <li key={`${issue.level}-${index}`}>{issue.message}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <div className="ar-card">
+        <h3 className="ar-panel-title">Project Info</h3>
+        <p className="ar-help">Read-only fields from the workspace profile.</p>
+        <div className="mt-3 space-y-3">
+          <div>
+            <div className="ar-label">Project Id</div>
+            <div className="ar-readonly" title={profile.projectId}>
+              {profile.projectId}
+            </div>
+          </div>
+          <div>
+            <div className="ar-label">Project Root</div>
+            <div className="ar-readonly" title={profile.projectRoot}>
+              {profile.projectRoot}
+            </div>
+          </div>
+          <div>
+            <div className="ar-label">Config Path</div>
+            <div className="ar-readonly" title={configPath}>
+              {configPath}
+            </div>
+          </div>
         </div>
       </div>
 
-      <div className="rounded-2xl border border-slate-200 bg-white/80 p-4 shadow-sm">
-        <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-          Scan Config
-        </h2>
-        <div className="mt-3 space-y-3 text-xs text-slate-700">
-          <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
-            Mode
+      <div className="ar-card">
+        <h3 className="ar-panel-title">Scan Roots</h3>
+        <p className="ar-help">Optional overrides to narrow what the scanner traverses.</p>
+        <label className="mt-3 flex flex-col gap-2">
+          <span className="ar-label">Scan Root (optional)</span>
+          <input
+            className="ar-input"
+            value={profile.scanRoot ?? ''}
+            disabled={disabled}
+            onChange={(event) =>
+              onProfileChange({ ...profile, scanRoot: normalizePath(event.target.value) })
+            }
+          />
+        </label>
+      </div>
+
+      <div className="ar-card">
+        <h3 className="ar-panel-title">Scan Mode</h3>
+        <p className="ar-help">Directory scans are fastest, solution scans are richer.</p>
+        <div className="mt-3 space-y-3">
+          <label className="flex flex-col gap-2">
+            <span className="ar-label">Mode</span>
             <select
-              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800"
+              className="ar-select"
               value={config.scan.mode}
               disabled={disabled}
               onChange={(event) => updateScan({ mode: event.target.value })}
@@ -121,44 +193,65 @@ const ConfigPanel = ({
               <option value="MsBuildSolution">MsBuildSolution</option>
             </select>
           </label>
-          <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
-            Solution Path (optional)
+          <label className="flex flex-col gap-2">
+            <span className="ar-label">Solution Path (optional)</span>
             <input
-              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800"
+              className="ar-input"
               value={config.scan.solutionPath ?? ''}
               disabled={disabled}
               onChange={(event) => updateScan({ solutionPath: normalizePath(event.target.value) })}
             />
           </label>
-          <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
-            Exclude Globs (one per line)
-            <textarea
-              className="h-24 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700"
-              value={config.scan.excludeGlobs.join('\n')}
+        </div>
+      </div>
+
+      <div className="ar-card">
+        <h3 className="ar-panel-title">Exclude Globs</h3>
+        <p className="ar-help">One per line. Use to keep test fixtures or build outputs out.</p>
+        <textarea
+          className="ar-textarea mt-3 h-28"
+          value={config.scan.excludeGlobs.join('\n')}
+          disabled={disabled}
+          onChange={(event) =>
+            updateScan({
+              excludeGlobs: event.target.value
+                .split(/\r?\n/)
+                .map((item) => item.trim())
+                .filter(Boolean),
+            })
+          }
+        />
+      </div>
+
+      <div className="ar-card">
+        <h3 className="ar-panel-title">Feature Rules</h3>
+        <p className="ar-help">Map namespaces or folders into feature keys.</p>
+        <div className="mt-3 space-y-3">
+          <label className="flex flex-col gap-2">
+            <span className="ar-label">Fallback Feature Key</span>
+            <input
+              className={`ar-input ${!config.featureRules.fallbackFeatureKey.trim() ? 'ar-input-error' : ''}`}
+              value={config.featureRules.fallbackFeatureKey}
               disabled={disabled}
               onChange={(event) =>
-                updateScan({
-                  excludeGlobs: event.target.value
-                    .split(/\r?\n/)
-                    .map((item) => item.trim())
-                    .filter(Boolean),
+                onConfigChange({
+                  ...config,
+                  featureRules: {
+                    ...config.featureRules,
+                    fallbackFeatureKey: event.target.value,
+                  },
                 })
               }
             />
           </label>
-        </div>
-      </div>
-
-      <div className="rounded-2xl border border-slate-200 bg-white/80 p-4 shadow-sm">
-        <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-          Feature Rules
-        </h2>
-        <div className="mt-3 space-y-3 text-xs text-slate-700">
           {config.featureRules.rules.map((rule, index) => (
-            <div key={`${rule.kind}-${rule.pattern}-${index}`} className="space-y-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+            <div
+              key={`${rule.kind}-${rule.pattern}-${index}`}
+              className="rounded-2xl border border-black/10 bg-white/70 p-3"
+            >
               <div className="flex items-center gap-2">
                 <select
-                  className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs"
+                  className="ar-select"
                   value={rule.kind}
                   disabled={disabled}
                   onChange={(event) => {
@@ -171,18 +264,19 @@ const ConfigPanel = ({
                   <option value="FolderPattern">FolderPattern</option>
                 </select>
                 <button
-                  className="ml-auto text-[11px] text-rose-500 hover:underline"
+                  className="ar-link-button ml-auto"
                   disabled={disabled}
                   onClick={() => {
                     const next = config.featureRules.rules.filter((_, idx) => idx !== index);
                     updateFeatureRules(next);
                   }}
+                  type="button"
                 >
                   Remove
                 </button>
               </div>
               <input
-                className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs"
+                className={`ar-input mt-3 ${ruleErrors.has(index) ? 'ar-input-error' : ''}`}
                 placeholder="Pattern"
                 value={rule.pattern}
                 disabled={disabled}
@@ -193,7 +287,7 @@ const ConfigPanel = ({
                 }}
               />
               <input
-                className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs"
+                className="ar-input mt-3"
                 placeholder="FeatureKey (optional)"
                 value={rule.featureKey ?? ''}
                 disabled={disabled}
@@ -206,7 +300,7 @@ const ConfigPanel = ({
             </div>
           ))}
           <button
-            className="w-full rounded-lg border border-dashed border-slate-300 bg-white px-3 py-2 text-xs text-slate-600 hover:bg-slate-50"
+            className="ar-ghost-button"
             disabled={disabled}
             onClick={() => {
               updateFeatureRules([
@@ -214,18 +308,18 @@ const ConfigPanel = ({
                 { kind: 'NamespacePattern', pattern: '', featureKey: '' },
               ]);
             }}
+            type="button"
           >
             Add Rule
           </button>
         </div>
       </div>
 
-      <div className="rounded-2xl border border-slate-200 bg-white/80 p-4 shadow-sm">
-        <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-          External Folding
-        </h2>
-        <div className="mt-3 space-y-3 text-xs text-slate-700">
-          <label className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+      <div className="ar-card">
+        <h3 className="ar-panel-title">External Folding</h3>
+        <p className="ar-help">Group external namespaces into rollup buckets.</p>
+        <div className="mt-3 space-y-3">
+          <label className="flex items-center gap-2 text-xs text-slate-600">
             <input
               type="checkbox"
               checked={config.externalFolding.enabled}
@@ -242,18 +336,38 @@ const ConfigPanel = ({
             />
             Enabled
           </label>
+          <label className="flex flex-col gap-2">
+            <span className="ar-label">Default Group Name</span>
+            <input
+              className="ar-input"
+              value={config.externalFolding.defaultGroupName}
+              disabled={disabled}
+              onChange={(event) =>
+                onConfigChange({
+                  ...config,
+                  externalFolding: {
+                    ...config.externalFolding,
+                    defaultGroupName: event.target.value,
+                  },
+                })
+              }
+            />
+          </label>
           {config.externalFolding.groups.map((group, index) => (
-            <div key={`${group.name}-${index}`} className="space-y-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+            <div
+              key={`${group.name}-${index}`}
+              className="rounded-2xl border border-black/10 bg-white/70 p-3"
+            >
               <div className="flex items-center gap-2">
                 <input
-                  className="flex-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs"
+                  className={`ar-input flex-1 ${groupErrors.has(index) ? 'ar-input-error' : ''}`}
                   placeholder="Group name"
                   value={group.name}
                   disabled={disabled}
                   onChange={(event) => updateExternalGroups(index, event.target.value, 'name')}
                 />
                 <button
-                  className="text-[11px] text-rose-500 hover:underline"
+                  className="ar-link-button"
                   disabled={disabled}
                   onClick={() => {
                     const next = config.externalFolding.groups.filter((_, idx) => idx !== index);
@@ -262,12 +376,13 @@ const ConfigPanel = ({
                       externalFolding: { ...config.externalFolding, groups: next },
                     });
                   }}
+                  type="button"
                 >
                   Remove
                 </button>
               </div>
               <textarea
-                className="h-16 w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs"
+                className="ar-textarea mt-3 h-20"
                 placeholder="Prefixes (comma or newline separated)"
                 value={group.prefixes.join('\n')}
                 disabled={disabled}
@@ -276,7 +391,7 @@ const ConfigPanel = ({
             </div>
           ))}
           <button
-            className="w-full rounded-lg border border-dashed border-slate-300 bg-white px-3 py-2 text-xs text-slate-600 hover:bg-slate-50"
+            className="ar-ghost-button"
             disabled={disabled}
             onClick={() =>
               onConfigChange({
@@ -290,82 +405,88 @@ const ConfigPanel = ({
                 },
               })
             }
+            type="button"
           >
             Add Group
           </button>
         </div>
       </div>
 
-      <div className="rounded-2xl border border-slate-200 bg-white/80 p-4 shadow-sm">
-        <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-          L2 Config
-        </h2>
-        <div className="mt-3 space-y-3 text-xs text-slate-700">
-          <label className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+      <div className="ar-card">
+        <h3 className="ar-panel-title">L2 Config</h3>
+        <p className="ar-help">Controls the depth and targets for L2 expansion.</p>
+        <div className="mt-3 space-y-3">
+          <label className="flex items-center gap-2 text-xs text-slate-600">
             <input
               type="checkbox"
               checked={config.l2.enabled}
               disabled={disabled}
               onChange={(event) =>
-                onConfigChange({
-                  ...config,
-                  l2: { ...config.l2, enabled: event.target.checked },
+                updateL2({
+                  enabled: event.target.checked,
                 })
               }
             />
             Enabled
           </label>
-          <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
-            Max Depth
+          <label className="flex flex-col gap-2">
+            <span className="ar-label">Targets (comma separated)</span>
+            <input
+              className="ar-input"
+              value={config.l2.targets.join(', ')}
+              disabled={disabled}
+              onChange={(event) =>
+                updateL2({
+                  targets: event.target.value
+                    .split(',')
+                    .map((item) => item.trim())
+                    .filter(Boolean),
+                })
+              }
+            />
+          </label>
+          <label className="flex flex-col gap-2">
+            <span className="ar-label">Max Depth</span>
             <input
               type="number"
-              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800"
+              className={`ar-input ${config.l2.enabled && config.l2.maxDepth <= 0 ? 'ar-input-error' : ''}`}
               value={config.l2.maxDepth}
               disabled={disabled}
               onChange={(event) =>
-                onConfigChange({
-                  ...config,
-                  l2: { ...config.l2, maxDepth: Number(event.target.value || 0) },
+                updateL2({
+                  maxDepth: Number(event.target.value || 0),
                 })
               }
             />
           </label>
-          <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
-            Stop Kinds (comma separated)
+          <label className="flex flex-col gap-2">
+            <span className="ar-label">Stop Kinds (comma separated)</span>
             <input
-              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800"
+              className="ar-input"
               value={config.l2.stopKinds.join(', ')}
               disabled={disabled}
               onChange={(event) =>
-                onConfigChange({
-                  ...config,
-                  l2: {
-                    ...config.l2,
-                    stopKinds: event.target.value
-                      .split(',')
-                      .map((item) => item.trim())
-                      .filter(Boolean),
-                  },
+                updateL2({
+                  stopKinds: event.target.value
+                    .split(',')
+                    .map((item) => item.trim())
+                    .filter(Boolean),
                 })
               }
             />
           </label>
-          <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
-            Edge Kinds (comma separated, optional)
+          <label className="flex flex-col gap-2">
+            <span className="ar-label">Edge Kinds (comma separated, optional)</span>
             <input
-              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800"
+              className="ar-input"
               value={config.l2.edgeKinds.join(', ')}
               disabled={disabled}
               onChange={(event) =>
-                onConfigChange({
-                  ...config,
-                  l2: {
-                    ...config.l2,
-                    edgeKinds: event.target.value
-                      .split(',')
-                      .map((item) => item.trim())
-                      .filter(Boolean),
-                  },
+                updateL2({
+                  edgeKinds: event.target.value
+                    .split(',')
+                    .map((item) => item.trim())
+                    .filter(Boolean),
                 })
               }
             />
@@ -373,29 +494,67 @@ const ConfigPanel = ({
         </div>
       </div>
 
-      <div className="flex gap-2">
+      <div className="ar-card">
+        <h3 className="ar-panel-title">Debug & Notes</h3>
+        <p className="ar-help">Diagnostics and human notes for future runs.</p>
+        <div className="mt-3 space-y-3">
+          <label className="flex items-center gap-2 text-xs text-slate-600">
+            <input
+              type="checkbox"
+              checked={config.debugEnabled}
+              disabled={disabled}
+              onChange={(event) =>
+                onConfigChange({ ...config, debugEnabled: event.target.checked })
+              }
+            />
+            Debug logging enabled
+          </label>
+          <label className="flex flex-col gap-2">
+            <span className="ar-label">Notes</span>
+            <textarea
+              className="ar-textarea h-24"
+              value={config.notes ?? ''}
+              disabled={disabled}
+              onChange={(event) =>
+                onConfigChange({ ...config, notes: event.target.value })
+              }
+            />
+          </label>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap gap-2">
         <button
-          className="flex-1 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 shadow-sm hover:-translate-y-0.5 hover:shadow-md"
-          disabled={disabled || busy}
+          className="ar-button"
+          disabled={actionDisabled}
           onClick={onSave}
+          type="button"
         >
           Save Config
         </button>
         <button
-          className="flex-1 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 shadow-sm hover:-translate-y-0.5 hover:shadow-md"
+          className="ar-button"
           disabled={disabled || busy}
           onClick={onReload}
+          type="button"
         >
           Reload
         </button>
         <button
-          className="flex-1 rounded-full border border-amber-200 bg-amber-50 px-4 py-2 text-xs font-semibold text-amber-800 shadow-sm hover:-translate-y-0.5 hover:shadow-md"
-          disabled={disabled || busy}
+          className="ar-button-primary"
+          disabled={actionDisabled}
           onClick={onScan}
+          type="button"
         >
           Start Scan
         </button>
       </div>
+      {busy && (
+        <div className="text-[11px] text-slate-500">Working on the requested action...</div>
+      )}
+      <p className="text-[11px] text-slate-500">
+        Saving updates config only. Scans run only when you click Start Scan.
+      </p>
     </div>
   );
 };
