@@ -99,6 +99,7 @@ const App = () => {
     stack: [],
     index: -1,
   });
+  const [showStatusItems, setShowStatusItems] = useState(true);
   const [layerParents, setLayerParents] = useState<Record<string, string>>({});
   const desiredSnapshotIdRef = useRef('');
   const desiredLayerRef = useRef('');
@@ -208,6 +209,12 @@ const App = () => {
     selectedSnapshotId,
     selectedLayer,
   ]);
+
+  useEffect(() => {
+    setShowStatusItems(true);
+    const timer = setTimeout(() => setShowStatusItems(false), 3000);
+    return () => clearTimeout(timer);
+  }, [activeTab]);
 
   useEffect(() => {
     api
@@ -1117,37 +1124,7 @@ const App = () => {
           </div>
         ) : null}
 
-        <div className="px-4 pb-3">
-          <div className="flex flex-wrap gap-2">
-            <button className="ar-chip-button" onClick={handleGoBack} disabled={!canGoBack} type="button">
-              Back
-            </button>
-            <button
-              className="ar-chip-button"
-              onClick={handleGoForward}
-              disabled={!canGoForward}
-              type="button"
-            >
-              Forward
-            </button>
-            <button
-              className="ar-chip-button"
-              onClick={handleGoUp}
-              disabled={!selectedLayer || selectedLayer === 'L0'}
-              type="button"
-            >
-              Up
-            </button>
-            <button
-              className="ar-chip-button"
-              onClick={handleGoHome}
-              disabled={!layers.includes('L0')}
-              type="button"
-            >
-              Home (L0)
-            </button>
-          </div>
-        </div>
+
 
         <div className="flex-1 overflow-y-auto px-3 pb-4">
           <div className="space-y-4">
@@ -1195,31 +1172,15 @@ const App = () => {
         />
       </aside>
       <main className="relative flex min-w-0 flex-1 flex-col">
-        <div className="mb-3">
-          <div className="ar-panel flex items-center gap-6 px-6 py-2.5">
-            <div className="flex items-center gap-2">
-              <span className="ar-label whitespace-nowrap">Appearance</span>
-            </div>
-            <div className="h-4 w-px bg-black/10" />
-            <div className="flex-1">
-              <ThemePicker
-                themeKey={themeKey}
-                backgroundKey={backgroundKey}
-                fontKey={fontKey}
-                onThemeChange={setThemeKey}
-                onBackgroundChange={setBackgroundKey}
-                onFontChange={setFontKey}
-              />
-            </div>
-          </div>
-        </div>
-
         <div className="relative flex min-h-0 flex-1">
           <MermaidPreview
             code={code}
             themeKey={themeKey}
             backgroundKey={backgroundKey}
             fontKey={fontKey}
+            onThemeChange={setThemeKey}
+            onBackgroundChange={setBackgroundKey}
+            onFontChange={setFontKey}
             renderOptions={renderOptions}
             selectedNodeIds={selectedMermaidNodes}
             selectedEdge={selectedMermaidEdge}
@@ -1345,23 +1306,24 @@ const App = () => {
         </div>
       </div>
 
-      {statusItems.length > 0 && (
-        <div className="pointer-events-none fixed bottom-6 right-6 z-50 flex w-[320px] flex-col gap-2">
-          {statusItems.map((item, index) => (
-            <div
-              key={`${item.tone}-${index}`}
-              className={`pointer-events-auto rounded-2xl border px-4 py-3 text-xs shadow-sm ${item.tone === 'ok'
-                ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
-                : item.tone === 'error'
-                  ? 'border-rose-200 bg-rose-50 text-rose-700'
-                  : 'border-amber-200 bg-amber-50 text-amber-900'
-                }`}
-            >
-              {item.message}
-            </div>
-          ))}
-        </div>
-      )}
+      <div
+        className={`pointer-events-none fixed bottom-6 right-6 z-50 flex w-[320px] flex-col gap-2 transition-all duration-700 ease-in-out ${showStatusItems && statusItems.length > 0 ? 'translate-y-0 opacity-100' : 'translate-y-8 opacity-0'
+          }`}
+      >
+        {statusItems.map((item, index) => (
+          <div
+            key={`${item.tone}-${index}`}
+            className={`pointer-events-auto rounded-2xl border px-4 py-3 text-xs shadow-sm ${item.tone === 'ok'
+              ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
+              : item.tone === 'error'
+                ? 'border-rose-200 bg-rose-50 text-rose-700'
+                : 'border-amber-200 bg-amber-50 text-amber-900'
+              }`}
+          >
+            {item.message}
+          </div>
+        ))}
+      </div>
     </div>
   );
 };
