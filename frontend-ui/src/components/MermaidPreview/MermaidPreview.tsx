@@ -81,6 +81,7 @@ const injectSvgStyles = (svg: string, themeCss?: string, fontFamily?: string) =>
 text, .label, .messageText, .noteText, .labelText, .loopText, .taskText,
 .sectionTitle, .titleText, .legendText, tspan {
   font-family: ${fontFamily} !important;
+  text-transform: none !important;
 }
 `
     : '';

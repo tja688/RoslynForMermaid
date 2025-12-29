@@ -1233,20 +1233,7 @@ const App = () => {
             }}
           />
 
-          <div className="pointer-events-none absolute right-6 top-24 z-20 text-[11px] text-slate-600">
-            <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">
-              Hover
-            </div>
-            <div className="text-sm font-semibold text-slate-800">{hoverText}</div>
-            {hoverDisplay?.meta && <div className="text-[10px] text-slate-400">{hoverDisplay.meta}</div>}
-            <div className="mt-3 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">
-              Selected
-            </div>
-            <div className="text-sm font-semibold text-slate-800">{selectedText}</div>
-            {selectedDisplay?.meta && (
-              <div className="text-[10px] text-slate-400">{selectedDisplay.meta}</div>
-            )}
-          </div>
+
         </div>
       </main>
     </div>
@@ -1275,7 +1262,26 @@ const App = () => {
               </div>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-1.5 rounded-full bg-black/5 p-1">
+              <button
+                className={`ar-tab !px-4 !py-1.5 ${activeTab === 'config' ? 'ar-tab-active' : ''}`}
+                onClick={() => setActiveTab('config')}
+                type="button"
+              >
+                Config
+              </button>
+              <button
+                className={`ar-tab !px-4 !py-1.5 ${activeTab === 'mermaid' ? 'ar-tab-active' : ''}`}
+                onClick={() => setActiveTab('mermaid')}
+                type="button"
+              >
+                Mermaid
+              </button>
+            </div>
+
+            <div className="h-6 w-px bg-black/10 mx-1" />
+
             {activeTab === 'mermaid' && (
               <button className="ar-button" onClick={handleExport} type="button">
                 Export SVG
@@ -1284,22 +1290,7 @@ const App = () => {
           </div>
         </header>
 
-        <div className="flex flex-wrap items-center gap-2 px-6 pb-3">
-          <button
-            className={`ar-tab ${activeTab === 'config' ? 'ar-tab-active' : ''}`}
-            onClick={() => setActiveTab('config')}
-            type="button"
-          >
-            Config & Scan
-          </button>
-          <button
-            className={`ar-tab ${activeTab === 'mermaid' ? 'ar-tab-active' : ''}`}
-            onClick={() => setActiveTab('mermaid')}
-            type="button"
-          >
-            Mermaid
-          </button>
-        </div>
+
 
         <div className="flex-1 overflow-hidden px-6 pb-6">
           {activeTab === 'config' ? configView : mermaidView}
