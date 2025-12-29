@@ -64,7 +64,7 @@ const App = () => {
   const [themeKey, setThemeKey] = useState<ThemeType>('spotless');
   const [backgroundKey, setBackgroundKey] = useState('default');
   const [fontKey, setFontKey] = useState('default');
-  const [source, setSource] = useState<DataSource>('demo');
+  const [source, setSource] = useState<DataSource>('local');
 
   const [activeTab, setActiveTab] = useState<'config' | 'mermaid'>('config');
   const [scanPhase, setScanPhase] = useState<ScanPhase>('idle');
@@ -85,6 +85,7 @@ const App = () => {
   const [renderError, setRenderError] = useState('');
   const [apiMessage, setApiMessage] = useState('');
   const [apiAvailable, setApiAvailable] = useState(false);
+  const [apiChecked, setApiChecked] = useState(false);
   const [apiVersion, setApiVersion] = useState<string | undefined>(undefined);
   const [profile, setProfile] = useState<ProjectProfile | null>(null);
   const [config, setConfig] = useState<ArchRadarConfig | null>(null);
@@ -225,8 +226,18 @@ const App = () => {
             ? `Backend not started. VITE_API_BASE=${base} (${error.message})`
             : `Backend not started. VITE_API_BASE=${base}`,
         );
+      })
+      .finally(() => {
+        setApiChecked(true);
       });
   }, []);
+
+  useEffect(() => {
+    if (!apiChecked) return;
+    if (!apiAvailable && source === 'local') {
+      setSource('demo');
+    }
+  }, [apiChecked, apiAvailable, source]);
 
   useEffect(() => {
     const resetWorkspace = () => {
@@ -255,6 +266,10 @@ const App = () => {
     if (source === 'demo') {
       resetWorkspace();
       setCode(localCode);
+      return;
+    }
+
+    if (source === 'local' && !apiChecked) {
       return;
     }
 
@@ -287,7 +302,7 @@ const App = () => {
     return () => {
       cancelled = true;
     };
-  }, [source, apiAvailable, localCode]);
+  }, [source, apiAvailable, apiChecked, localCode]);
 
   useEffect(() => {
     if (source === 'demo' || !selectedProjectId) {
@@ -727,6 +742,13 @@ const App = () => {
   const mermaidControlsDisabled = source === 'demo' || (source === 'local' && !apiAvailable);
   const scanDisabled =
     mermaidControlsDisabled || !selectedProjectId || !config || configBusy || configValidation.hasErrors;
+  const showDataSourcePanel = apiChecked && !apiAvailable;
+  const dataSourceStatusText =
+    source === 'demo'
+      ? 'Local API offline. Demo mode active.'
+      : source === 'mock'
+        ? 'Local API offline. Mock API active.'
+        : 'Local API offline. Switch to Demo or Mock to continue.';
 
   const formatLayerLabel = (layer: string) => {
     if (layer === 'L0') return 'Overview';
@@ -870,12 +892,12 @@ const App = () => {
 
   const configView = (
     <div className="flex h-full flex-col gap-4 overflow-hidden">
-      <div className="grid gap-4 lg:grid-cols-2">
+      {showDataSourcePanel && (
         <section className="ar-panel px-5 py-4">
           <div className="flex items-center justify-between">
             <div>
               <p className="ar-panel-title">Data Source</p>
-              <p className="text-xs text-slate-500">Environment and connectivity.</p>
+              <p className="text-xs text-slate-500">Local API unavailable. Choose a fallback.</p>
             </div>
             <span className="rounded-full border border-black/10 bg-white/70 px-3 py-1 text-[11px] text-slate-500">
               {source === 'demo' ? 'Demo' : source === 'mock' ? 'Mock API' : 'Local API'}
@@ -896,64 +918,56 @@ const App = () => {
               <option value="local">Local API</option>
               <option value="mock">Mock API</option>
             </select>
-            <p className="ar-help">Switch between demo, live API, and mock data.</p>
+            <p className="ar-help">Demo is selected by default when the local API is offline.</p>
           </div>
-          <div
-            className={`mt-3 ar-callout ${
-              source === 'demo'
-                ? 'ar-callout-muted'
-                : apiAvailable
-                  ? 'ar-callout-ok'
-                  : 'ar-callout-warn'
-            }`}
-          >
-            {source === 'demo' ? (
-              <span>Demo mode active. Local scans are disabled.</span>
-            ) : apiAvailable ? (
-              <span>API healthy{apiVersion ? ` (${apiVersion})` : ''}.</span>
-            ) : (
-              <span>API offline. Demo mode is recommended.</span>
-            )}
+          <div className="mt-3 ar-callout ar-callout-warn">
+            <span>{dataSourceStatusText}</span>
           </div>
         </section>
-
-        <section className="ar-panel px-5 py-4">
-          <p className="ar-panel-title">Project Info</p>
-          <p className="text-xs text-slate-500">Current workspace (read-only).</p>
-          {profile ? (
-            <div className="mt-3 space-y-3">
-              <div>
-                <div className="ar-label">Project</div>
-                <div className="ar-readonly" title={selectedProjectName ?? profile.projectId}>
-                  {selectedProjectName ?? profile.projectId}
-                </div>
-              </div>
-              <div>
-                <div className="ar-label">Project Root</div>
-                <div className="ar-readonly" title={profile.projectRoot}>
-                  {profile.projectRoot}
-                </div>
-              </div>
-              <div>
-                <div className="ar-label">Config Path</div>
-                <div className="ar-readonly" title={configPath || 'n/a'}>
-                  {configPath || 'n/a'}
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div className="mt-3 ar-card-muted">No project selected.</div>
-          )}
-        </section>
-      </div>
+      )}
 
       <section className="ar-panel flex min-h-0 flex-1 flex-col overflow-hidden">
         <div className="px-5 pt-4">
-          <p className="ar-panel-title">Scan Configuration</p>
-          <p className="text-xs text-slate-500">Tune what the scanner includes.</p>
+          <p className="ar-panel-title">Project & Scan</p>
+          <p className="text-xs text-slate-500">Workspace details and scan configuration.</p>
         </div>
-        <div className="flex-1 overflow-y-auto px-5 pb-5 pt-4">
-          <div className="space-y-4">
+        <div className="flex min-h-0 flex-1 flex-col gap-4 px-5 pb-5 pt-4 lg:flex-row">
+          <div className="space-y-4 lg:w-[320px] lg:shrink-0">
+            <div className="ar-card">
+              <p className="ar-panel-title">Project Info</p>
+              <p className="text-xs text-slate-500">Current workspace (read-only).</p>
+              {profile ? (
+                <div className="mt-3 space-y-3">
+                  <div>
+                    <div className="ar-label">Project</div>
+                    <div className="ar-readonly" title={selectedProjectName ?? profile.projectId}>
+                      {selectedProjectName ?? profile.projectId}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="ar-label">Project Root</div>
+                    <div className="ar-readonly" title={profile.projectRoot}>
+                      {profile.projectRoot}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="ar-label">Config Path</div>
+                    <div className="ar-readonly" title={configPath || 'n/a'}>
+                      {configPath || 'n/a'}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-3 ar-card-muted">No project selected.</div>
+              )}
+            </div>
+          </div>
+
+          <div className="min-h-0 min-w-0 flex-1 space-y-4 overflow-y-auto pr-1 lg:pr-3">
+            <div>
+              <p className="ar-panel-title">Scan Configuration</p>
+              <p className="text-xs text-slate-500">Tune what the scanner includes.</p>
+            </div>
             <ConfigPanel
               profile={profile}
               config={config}
@@ -965,21 +979,6 @@ const App = () => {
               onReload={handleReloadConfig}
               onValidationChange={setConfigValidation}
             />
-
-            <div className="ar-card">
-              <h3 className="ar-panel-title">Appearance</h3>
-              <p className="mb-3 text-xs text-slate-500">
-                Customize Mermaid colors, backgrounds, and fonts.
-              </p>
-              <ThemePicker
-                themeKey={themeKey}
-                backgroundKey={backgroundKey}
-                fontKey={fontKey}
-                onThemeChange={setThemeKey}
-                onBackgroundChange={setBackgroundKey}
-                onFontChange={setFontKey}
-              />
-            </div>
 
             {source === 'demo' && (
               <div className="ar-card">
@@ -1256,7 +1255,28 @@ const App = () => {
             }}
           />
 
-          <div className="pointer-events-none absolute right-6 top-6 z-20 text-[11px] text-slate-600">
+          <div className="pointer-events-auto absolute left-1/2 top-4 z-30 w-[min(900px,calc(100%-12rem))] -translate-x-1/2">
+            <div className="ar-panel flex items-center gap-4 px-5 py-3">
+              <div className="min-w-[140px]">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                  Appearance
+                </div>
+                <div className="text-xs text-slate-500">Theme, background, font.</div>
+              </div>
+              <div className="flex-1">
+                <ThemePicker
+                  themeKey={themeKey}
+                  backgroundKey={backgroundKey}
+                  fontKey={fontKey}
+                  onThemeChange={setThemeKey}
+                  onBackgroundChange={setBackgroundKey}
+                  onFontChange={setFontKey}
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="pointer-events-none absolute right-6 top-24 z-20 text-[11px] text-slate-600">
             <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">
               Hover
             </div>
