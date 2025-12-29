@@ -60,6 +60,21 @@ const parseEdgeKey = (key: string) => {
   return { fromId, toId, edgeKind: rest.join('::') };
 };
 
+const UNASSIGNED_LAYER = '__ar_unassigned__';
+
+const formatLayerLabel = (layer: string) => {
+  if (layer === 'L0') return 'Overview';
+  const parts = layer.split(':');
+  return parts.length > 1 ? parts.slice(1).join(':') : layer;
+};
+
+const sortLayersByLabel = (items: string[]) =>
+  items
+    .slice()
+    .sort((left, right) =>
+      formatLayerLabel(left).localeCompare(formatLayerLabel(right), undefined, { sensitivity: 'base' }),
+    );
+
 const App = () => {
   const [themeKey, setThemeKey] = useState<ThemeType>('spotless');
   const [backgroundKey, setBackgroundKey] = useState('default');
@@ -101,6 +116,7 @@ const App = () => {
   });
   const [showStatusItems, setShowStatusItems] = useState(true);
   const [layerParents, setLayerParents] = useState<Record<string, string>>({});
+  const [expandedLayers, setExpandedLayers] = useState<Set<string>>(() => new Set());
   const desiredSnapshotIdRef = useRef('');
   const desiredLayerRef = useRef('');
   const resizeStateRef = useRef({ active: false, startX: 0, startWidth: 320 });
@@ -266,6 +282,7 @@ const App = () => {
       setSelectedFeatureKey(null);
       setSelectedEdgeKey(null);
       setLayerParents({});
+      setExpandedLayers(new Set());
       setScanPhase('idle');
       clearHistory();
     };
@@ -537,6 +554,7 @@ const App = () => {
       setSelectedFeatureKey(null);
       setSelectedEdgeKey(null);
       setLayerParents({});
+      setExpandedLayers(new Set());
       clearHistory();
       setScanPhase('done');
       setApiMessage('Scan complete.');
@@ -605,6 +623,7 @@ const App = () => {
     setSelectedFeatureKey(null);
     setSelectedEdgeKey(null);
     setLayerParents({});
+    setExpandedLayers(new Set());
     clearHistory();
   };
 
@@ -617,6 +636,7 @@ const App = () => {
     setSelectedFeatureKey(null);
     setSelectedEdgeKey(null);
     setLayerParents({});
+    setExpandedLayers(new Set());
     clearHistory();
   };
 
@@ -756,33 +776,187 @@ const App = () => {
       : source === 'mock'
         ? 'Local API offline. Mock API active.'
         : 'Local API offline. Switch to Demo or Mock to continue.';
-
-  const formatLayerLabel = (layer: string) => {
-    if (layer === 'L0') return 'Overview';
-    const parts = layer.split(':');
-    return parts.length > 1 ? parts.slice(1).join(':') : layer;
+  const toggleExpandedLayer = (layer: string, force?: boolean) => {
+    setExpandedLayers((prev) => {
+      const next = new Set(prev);
+      const shouldExpand = force ?? !next.has(layer);
+      if (shouldExpand) {
+        next.add(layer);
+      } else {
+        next.delete(layer);
+      }
+      return next;
+    });
   };
 
-  const layerGroups = useMemo(
-    () => [
-      {
-        key: 'L0',
-        title: 'L0 Overview',
-        layers: layers.includes('L0') ? ['L0'] : [],
-      },
-      {
-        key: 'L1',
-        title: 'L1 Features',
-        layers: layers.filter((layer) => layer.startsWith('L1')),
-      },
-      {
-        key: 'L2',
-        title: 'L2 Dependencies',
-        layers: layers.filter((layer) => layer.startsWith('L2')),
-      },
-    ],
+  const l1Layers = useMemo(
+    () => sortLayersByLabel(layers.filter((layer) => layer.startsWith('L1'))),
     [layers],
   );
+  const l2Layers = useMemo(
+    () => sortLayersByLabel(layers.filter((layer) => layer.startsWith('L2'))),
+    [layers],
+  );
+
+  const l2ParentByLayer = useMemo(() => {
+    const map = new Map<string, string>();
+    if (!audit) return map;
+    const l1Set = new Set(l1Layers);
+    const l2Set = new Set(l2Layers);
+
+    for (const node of audit.nodes) {
+      const l2Layer = l2LayerMap.get(node.id);
+      if (!l2Layer || !l2Set.has(l2Layer)) continue;
+      const featureKey = node.featureKey || 'Unresolved';
+      const l1Layer = `L1:${featureKey}`;
+      if (!l1Set.has(l1Layer)) continue;
+      if (!map.has(l2Layer)) {
+        map.set(l2Layer, l1Layer);
+      }
+    }
+
+    return map;
+  }, [audit, l2LayerMap, l1Layers, l2Layers]);
+
+  const l2Buckets = useMemo(() => {
+    const buckets = new Map<string, string[]>();
+    for (const l1 of l1Layers) {
+      buckets.set(l1, []);
+    }
+    const unassigned: string[] = [];
+
+    for (const l2 of l2Layers) {
+      const mappedParent = l2ParentByLayer.get(l2) ?? layerParents[l2];
+      if (mappedParent && buckets.has(mappedParent)) {
+        buckets.get(mappedParent)?.push(l2);
+      } else {
+        unassigned.push(l2);
+      }
+    }
+
+    return { buckets, unassigned };
+  }, [l1Layers, l2Layers, l2ParentByLayer, layerParents]);
+
+  useEffect(() => {
+    setExpandedLayers((prev) => {
+      if (prev.size === 0) return prev;
+      const allowed = new Set(layers);
+      allowed.add(UNASSIGNED_LAYER);
+      const next = new Set<string>();
+      for (const layer of prev) {
+        if (allowed.has(layer)) {
+          next.add(layer);
+        }
+      }
+      return next;
+    });
+  }, [layers]);
+
+  useEffect(() => {
+    if (!selectedLayer || selectedLayer === 'L0') return;
+    setExpandedLayers((prev) => {
+      const next = new Set(prev);
+      if (layers.includes('L0')) {
+        next.add('L0');
+      }
+      if (selectedLayer.startsWith('L1:')) {
+        next.add(selectedLayer);
+      }
+      if (selectedLayer.startsWith('L2:')) {
+        const parent = l2ParentByLayer.get(selectedLayer) ?? layerParents[selectedLayer];
+        if (parent) {
+          next.add(parent);
+        } else if (l2Buckets.unassigned.includes(selectedLayer)) {
+          next.add(UNASSIGNED_LAYER);
+        }
+      }
+      return next;
+    });
+  }, [selectedLayer, l2ParentByLayer, layerParents, l2Buckets.unassigned, layers]);
+
+  const l0Available = layers.includes('L0');
+  const l0Expanded = expandedLayers.has('L0');
+  const showUnassignedGroup = l2Buckets.unassigned.length > 0;
+  const l0ChildCount = l1Layers.length + (showUnassignedGroup ? 1 : 0);
+
+  const handleLayerSelect = (
+    layer: string,
+    options: { parentLayer?: string; expandOnSelect?: boolean } = {},
+  ) => {
+    updateLayer(layer, { record: true, parentLayer: options.parentLayer });
+    if (options.expandOnSelect) {
+      toggleExpandedLayer(layer, true);
+    }
+  };
+
+  const renderTreeRow = ({
+    id,
+    label,
+    level,
+    isActive,
+    isExpanded,
+    hasChildren,
+    childCount,
+    onSelect,
+    selectable = true,
+  }: {
+    id: string;
+    label: string;
+    level: number;
+    isActive: boolean;
+    isExpanded: boolean;
+    hasChildren: boolean;
+    childCount?: number;
+    onSelect?: () => void;
+    selectable?: boolean;
+  }) => {
+    const rowClass = `flex items-center gap-2 rounded-xl border px-2 py-1.5 text-left text-[12px] font-semibold transition ${
+      isActive
+        ? 'border-amber-300 bg-amber-100 text-amber-900'
+        : 'border-black/10 bg-white/70 text-slate-700 hover:bg-white'
+    }`;
+    const toggleClass = `flex h-5 w-5 items-center justify-center rounded-md border text-[10px] font-semibold transition ${
+      !hasChildren
+        ? 'border-transparent text-transparent'
+        : mermaidControlsDisabled
+          ? 'border-black/10 bg-white/50 text-slate-300'
+          : 'border-black/10 bg-white/70 text-slate-500 hover:bg-white'
+    }`;
+
+    return (
+      <div key={id} style={{ marginLeft: level * 14 }}>
+        <div className={rowClass}>
+          <button
+            type="button"
+            className={toggleClass}
+            onClick={() => toggleExpandedLayer(id)}
+            disabled={mermaidControlsDisabled || !hasChildren}
+            aria-label={isExpanded ? 'Collapse' : 'Expand'}
+          >
+            {isExpanded ? 'v' : '>'}
+          </button>
+          {selectable ? (
+            <button
+              type="button"
+              className="flex-1 truncate text-left"
+              onClick={onSelect}
+              disabled={mermaidControlsDisabled || !onSelect}
+              title={label}
+            >
+              {label}
+            </button>
+          ) : (
+            <span className="flex-1 truncate text-left text-slate-500" title={label}>
+              {label}
+            </span>
+          )}
+          {typeof childCount === 'number' ? (
+            <span className="text-[10px] text-slate-400">{childCount}</span>
+          ) : null}
+        </div>
+      </div>
+    );
+  };
 
   const resolveMermaidLabel = (mermaidId: string) => {
     const node = nodeIndex.mermaidIdToNode.get(mermaidId);
@@ -1124,42 +1298,111 @@ const App = () => {
           </div>
         ) : null}
 
-
-
         <div className="flex-1 overflow-y-auto px-3 pb-4">
-          <div className="space-y-4">
-            {layerGroups.map((group) => (
-              <div key={group.key} className="space-y-2">
-                <div className="flex items-center justify-between text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
-                  <span>{group.title}</span>
-                  <span className="text-[10px] text-slate-400">{group.layers.length}</span>
-                </div>
-                {group.layers.length > 0 ? (
-                  group.layers.map((layer) => {
-                    const isActive = layer === selectedLayer;
-                    return (
-                      <button
-                        key={layer}
-                        className={`w-full rounded-xl border px-3 py-2 text-left text-[12px] font-semibold transition ${isActive
-                          ? 'border-amber-300 bg-amber-100 text-amber-900'
-                          : 'border-black/10 bg-white/70 text-slate-700 hover:bg-white'
-                          }`}
-                        onClick={() => updateLayer(layer, { record: true })}
-                        disabled={mermaidControlsDisabled}
-                        type="button"
-                        title={layer}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+              <span>Layer Tree</span>
+              <span className="text-[10px] text-slate-400">{layers.length}</span>
+            </div>
+            <p className="text-[11px] text-slate-500">Expand L0/L1 to drill into layers.</p>
+            {layers.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-black/10 px-3 py-2 text-[11px] text-slate-400">
+                No layers available.
+              </div>
+            ) : !l0Available ? (
+              <div className="rounded-xl border border-dashed border-black/10 px-3 py-2 text-[11px] text-slate-400">
+                L0 layer missing.
+              </div>
+            ) : (
+              <div className="space-y-1">
+                {renderTreeRow({
+                  id: 'L0',
+                  label: formatLayerLabel('L0'),
+                  level: 0,
+                  isActive: selectedLayer === 'L0',
+                  isExpanded: l0Expanded,
+                  hasChildren: l0ChildCount > 0,
+                  childCount: l0ChildCount,
+                  onSelect: () => handleLayerSelect('L0', { expandOnSelect: l0ChildCount > 0 }),
+                })}
+
+                {l0Expanded && (
+                  <div className="space-y-1">
+                    {l1Layers.length === 0 && !showUnassignedGroup ? (
+                      <div
+                        className="rounded-xl border border-dashed border-black/10 px-3 py-2 text-[11px] text-slate-400"
+                        style={{ marginLeft: 14 }}
                       >
-                        <span className="block truncate">{formatLayerLabel(layer)}</span>
-                      </button>
-                    );
-                  })
-                ) : (
-                  <div className="rounded-xl border border-dashed border-black/10 px-3 py-2 text-[11px] text-slate-400">
-                    No {group.key} layers.
+                        No L1 layers.
+                      </div>
+                    ) : (
+                      l1Layers.map((l1) => {
+                        const l2Children = l2Buckets.buckets.get(l1) ?? [];
+                        const l1Expanded = expandedLayers.has(l1);
+                        const hasChildren = l2Children.length > 0;
+
+                        return (
+                          <div key={l1} className="space-y-1">
+                            {renderTreeRow({
+                              id: l1,
+                              label: formatLayerLabel(l1),
+                              level: 1,
+                              isActive: selectedLayer === l1,
+                              isExpanded: l1Expanded,
+                              hasChildren,
+                              childCount: l2Children.length,
+                              onSelect: () =>
+                                handleLayerSelect(l1, { parentLayer: 'L0', expandOnSelect: hasChildren }),
+                            })}
+
+                            {l1Expanded &&
+                              l2Children.map((l2) =>
+                                renderTreeRow({
+                                  id: l2,
+                                  label: formatLayerLabel(l2),
+                                  level: 2,
+                                  isActive: selectedLayer === l2,
+                                  isExpanded: false,
+                                  hasChildren: false,
+                                  onSelect: () => handleLayerSelect(l2, { parentLayer: l1 }),
+                                }),
+                              )}
+                          </div>
+                        );
+                      })
+                    )}
+
+                    {showUnassignedGroup && (
+                      <div className="space-y-1">
+                        {renderTreeRow({
+                          id: UNASSIGNED_LAYER,
+                          label: 'Unassigned L2',
+                          level: 1,
+                          isActive: false,
+                          isExpanded: expandedLayers.has(UNASSIGNED_LAYER),
+                          hasChildren: true,
+                          childCount: l2Buckets.unassigned.length,
+                          selectable: false,
+                        })}
+
+                        {expandedLayers.has(UNASSIGNED_LAYER) &&
+                          l2Buckets.unassigned.map((l2) =>
+                            renderTreeRow({
+                              id: l2,
+                              label: formatLayerLabel(l2),
+                              level: 2,
+                              isActive: selectedLayer === l2,
+                              isExpanded: false,
+                              hasChildren: false,
+                              onSelect: () => handleLayerSelect(l2, { parentLayer: 'L0' }),
+                            }),
+                          )}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
-            ))}
+            )}
           </div>
         </div>
 

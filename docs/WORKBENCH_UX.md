@@ -5,6 +5,7 @@
 - Up: clear selection or move up one layer.
 - Home (L0): return to the top layer.
 - Breadcrumb chips show Project / Snapshot / Layer and allow quick layer jumps.
+- Mermaid Navigator uses an IDE-style tree: L0 is the root, expand to reveal L1 features, then expand L1 to reveal L2 layers.
 
 ## Canvas Controls
 - Scroll to zoom, drag background to pan.
