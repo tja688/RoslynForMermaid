@@ -1163,11 +1163,10 @@ const App = () => {
                     return (
                       <button
                         key={layer}
-                        className={`w-full rounded-xl border px-3 py-2 text-left text-[12px] font-semibold transition ${
-                          isActive
-                            ? 'border-amber-300 bg-amber-100 text-amber-900'
-                            : 'border-black/10 bg-white/70 text-slate-700 hover:bg-white'
-                        }`}
+                        className={`w-full rounded-xl border px-3 py-2 text-left text-[12px] font-semibold transition ${isActive
+                          ? 'border-amber-300 bg-amber-100 text-amber-900'
+                          : 'border-black/10 bg-white/70 text-slate-700 hover:bg-white'
+                          }`}
                         onClick={() => updateLayer(layer, { record: true })}
                         disabled={mermaidControlsDisabled}
                         type="button"
@@ -1195,8 +1194,26 @@ const App = () => {
           onPointerCancel={handleResizeEnd}
         />
       </aside>
-
       <main className="relative flex min-w-0 flex-1 flex-col">
+        <div className="mb-3">
+          <div className="ar-panel flex items-center gap-6 px-6 py-2.5">
+            <div className="flex items-center gap-2">
+              <span className="ar-label whitespace-nowrap">Appearance</span>
+            </div>
+            <div className="h-4 w-px bg-black/10" />
+            <div className="flex-1">
+              <ThemePicker
+                themeKey={themeKey}
+                backgroundKey={backgroundKey}
+                fontKey={fontKey}
+                onThemeChange={setThemeKey}
+                onBackgroundChange={setBackgroundKey}
+                onFontChange={setFontKey}
+              />
+            </div>
+          </div>
+        </div>
+
         <div className="relative flex min-h-0 flex-1">
           <MermaidPreview
             code={code}
@@ -1254,27 +1271,6 @@ const App = () => {
               }
             }}
           />
-
-          <div className="pointer-events-auto absolute left-1/2 top-4 z-30 w-[min(900px,calc(100%-12rem))] -translate-x-1/2">
-            <div className="ar-panel flex items-center gap-4 px-5 py-3">
-              <div className="min-w-[140px]">
-                <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
-                  Appearance
-                </div>
-                <div className="text-xs text-slate-500">Theme, background, font.</div>
-              </div>
-              <div className="flex-1">
-                <ThemePicker
-                  themeKey={themeKey}
-                  backgroundKey={backgroundKey}
-                  fontKey={fontKey}
-                  onThemeChange={setThemeKey}
-                  onBackgroundChange={setBackgroundKey}
-                  onFontChange={setFontKey}
-                />
-              </div>
-            </div>
-          </div>
 
           <div className="pointer-events-none absolute right-6 top-24 z-20 text-[11px] text-slate-600">
             <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">
@@ -1354,13 +1350,12 @@ const App = () => {
           {statusItems.map((item, index) => (
             <div
               key={`${item.tone}-${index}`}
-              className={`pointer-events-auto rounded-2xl border px-4 py-3 text-xs shadow-sm ${
-                item.tone === 'ok'
-                  ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
-                  : item.tone === 'error'
-                    ? 'border-rose-200 bg-rose-50 text-rose-700'
-                    : 'border-amber-200 bg-amber-50 text-amber-900'
-              }`}
+              className={`pointer-events-auto rounded-2xl border px-4 py-3 text-xs shadow-sm ${item.tone === 'ok'
+                ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
+                : item.tone === 'error'
+                  ? 'border-rose-200 bg-rose-50 text-rose-700'
+                  : 'border-amber-200 bg-amber-50 text-amber-900'
+                }`}
             >
               {item.message}
             </div>
